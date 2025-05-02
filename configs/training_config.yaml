@@ -1,0 +1,21 @@
+learning_rate: 0.0001
+batch_size: 16
+num_epochs: 50
+dataset_path: /path/to/dataset
+model_save_path: /path/to/save/model
+logging_dir: /path/to/logs
+checkpoint_interval: 5
+image_size: 512
+num_workers: 4
+optimizer:
+  type: Adam
+  weight_decay: 0.01
+scheduler:
+  type: StepLR
+  step_size: 10
+  gamma: 0.1
+loss_function: MSE
+augmentation:
+  random_flip: true
+  random_crop: true
+  color_jitter: true

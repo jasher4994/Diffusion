@@ -1,0 +1,7 @@
+model_path: "path/to/your/model"
+output_path: "path/to/output/directory"
+num_inference_steps: 50
+guidance_scale: 7.5
+seed: 42
+use_fp16: true
+output_format: "png"

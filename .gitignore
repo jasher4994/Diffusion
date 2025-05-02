@@ -1,0 +1,94 @@
+gitignore
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+env/
+.env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+profile_default/
+ipython_config.py
+
+# VS Code
+.vscode/
+*.code-workspace
+.history/
+
+# Data files
+data/
+datasets/
+*.npy
+*.h5
+*.pkl
+*.pt
+*.pth
+*.tar
+*.gz
+*.zip
+*.ckpt
+*.safetensors
+*.bin
+
+# Logs
+logs/
+*.log
+lightning_logs/
+runs/
+wandb/
+mlflow/
+tensorboard/
+
+# Images (optional - you might want to keep some)
+# *.png
+# *.jpg
+# *.jpeg
+# *.webp
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# UV specific
+.uv/
+.cache/
+.uvdata/
+
+# Model output/weights that are too large
+models/*/*_weights.pth
+checkpoints/
+trained_models/
+
+# Environment configuration
+.env
+.envrc
