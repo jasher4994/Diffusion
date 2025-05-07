@@ -92,3 +92,5 @@ trained_models/
 # Environment configuration
 .env
 .envrc
+
+data/
