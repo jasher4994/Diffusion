@@ -1,6 +1,6 @@
 import sys
 import os
-from conditional_diffusion.noise_scheduler import CosineNoiseScheduler
+from conditional_diffusion_model.noise_scheduler import CosineNoiseScheduler
 
 import torch
 import pdb 

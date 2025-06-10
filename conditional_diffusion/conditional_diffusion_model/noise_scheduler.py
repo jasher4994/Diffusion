@@ -123,4 +123,11 @@ class CosineNoiseScheduler:
 
         return noisy_images, noise
     
+    def to(self, device):
+        """Move all tensors to the specified device."""
+        self.alphas_cumprod = self.alphas_cumprod.to(device)
+        self.alphas = self.alphas.to(device)
+        self.betas = self.betas.to(device)
+        return self
+    
 

@@ -11,7 +11,7 @@ import torch
 import matplotlib.pyplot as plt
 from PIL import Image
 import torchvision.transforms as transforms
-from conditional_diffusion.noise_scheduler import CosineNoiseScheduler
+from conditional_diffusion_model.noise_scheduler import CosineNoiseScheduler
 from typing import List
 
 
