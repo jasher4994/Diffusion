@@ -2,23 +2,23 @@
 # TRAINING CONFIGURATION - OPTIMIZED FOR FASTER LEARNING
 # =============================================================================
 
-# Training hyperparameters
-BATCH_SIZE = 8              # 🔥 DOUBLE batch size - more stable gradients
+# Training hyperparameters  
+BATCH_SIZE = 16             # 🔥 INCREASED for more stable gradients
 IMAGE_SIZE = 32            # Keep current
-NUM_EPOCHS = 150           # More epochs but faster per epoch
-LEARNING_RATE = 5e-5       # 🔥 5x HIGHER LR - aggressive learning
+NUM_EPOCHS = 200           # More epochs for better convergence
+LEARNING_RATE = 1e-4       # 🔥 REDUCED LR - more stable training
 
 # Dataset configuration
 MAX_SAMPLES = None          
 
-# Model configuration - Optimized for speed + capacity
-TIMESTEPS = 200            # 🔥 MUCH EASIER denoising problem (was 500)
-BASE_CHANNELS = 96         # 🔥 REDUCE slightly - faster training
-TIME_EMB_DIM = 192         # 🔥 REDUCE - less computation
+# Model configuration - Increased capacity for better quality
+TIMESTEPS = 1000           # 🔥 STANDARD timesteps for better denoising
+BASE_CHANNELS = 128        # 🔥 INCREASED model capacity
+TIME_EMB_DIM = 256         # 🔥 INCREASED for better time conditioning
 TEXT_EMB_DIM = 512         # Keep CLIP dimension
 
-# Generation configuration - Better sampling
-NUM_INFERENCE_STEPS = 50   # 🔥 200/50 = 4x ratio (much easier)
+# Generation configuration - Proper sampling
+NUM_INFERENCE_STEPS = 100  # 🔥 More steps for higher quality
 
 # Logging and checkpoints
 CHECKPOINT_EVERY = 10      # 🔥 MORE frequent saves

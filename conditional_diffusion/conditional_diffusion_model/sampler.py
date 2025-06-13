@@ -33,12 +33,22 @@ class DDPMSampler:
         if num_inference_steps is None:
             num_inference_steps = self.noise_scheduler.num_timesteps
             
-        # Step 1: Start with pure noise (scaled down to prevent explosion)
-        x = torch.randn(batch_size, *image_size, device=self.device) * 0.5
+        # Step 1: Start with proper noise (don't scale down!)
+        x = torch.randn(batch_size, *image_size, device=self.device)
         
-        # Step 2: Iteratively denoise
-        timesteps = torch.linspace(self.noise_scheduler.num_timesteps - 1, 0, 
-                                 num_inference_steps, dtype=torch.long, device=self.device)
+        # Step 2: Use proper DDPM timestep spacing
+        # Instead of linear spacing, use the actual timesteps with proper spacing
+        if num_inference_steps < self.noise_scheduler.num_timesteps:
+            # Use every nth timestep for faster sampling
+            step_size = self.noise_scheduler.num_timesteps // num_inference_steps
+            timesteps = torch.arange(self.noise_scheduler.num_timesteps - 1, -1, -step_size, 
+                                   dtype=torch.long, device=self.device)
+            # Ensure we end at timestep 0
+            if timesteps[-1] != 0:
+                timesteps = torch.cat([timesteps, torch.tensor([0], device=self.device)])
+        else:
+            timesteps = torch.arange(self.noise_scheduler.num_timesteps - 1, -1, -1, 
+                                   dtype=torch.long, device=self.device)
         
         self.unet.eval()
         
@@ -55,8 +65,8 @@ class DDPMSampler:
             # Remove predicted noise to get cleaner image
             x = self.denoise_step(x, predicted_noise, t)
             
-            # Clamp values to prevent explosion
-            x = torch.clamp(x, -10.0, 10.0)
+            # More conservative clamping to preserve detail
+            x = torch.clamp(x, -3.0, 3.0)
             
             # Check for NaN/Inf and break if found
             if torch.isnan(x).any() or torch.isinf(x).any():
