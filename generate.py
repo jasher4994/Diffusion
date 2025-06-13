@@ -1,6 +1,7 @@
 import torch
 import matplotlib.pyplot as plt
 import os
+import argparse
 from conditional_diffusion.conditional_diffusion_model.noise_scheduler import CosineNoiseScheduler
 from conditional_diffusion.conditional_diffusion_model.unet import UNet
 from conditional_diffusion.conditional_diffusion_model.text_encoder import TextEncoder
@@ -110,10 +111,85 @@ def generate_images(checkpoint_name="model_final.pt"):
     print(f"🔍 Check the generated images in: {output_dir}/")
 
 if __name__ == "__main__":
-    import sys
+    parser = argparse.ArgumentParser(description='Generate images with diffusion model')
+    parser.add_argument('--checkpoint', type=str, default='model_final.pt', 
+                       help='Checkpoint filename (e.g., model_epoch_150.pt)')
+    parser.add_argument('--prompt', type=str, default=None,
+                       help='Text prompt for generation')
+    parser.add_argument('--save_path', type=str, default=None,
+                       help='Output path for generated image')
     
-    # Just use model_final.pt or first argument
-    checkpoint_name = sys.argv[1] if len(sys.argv) > 1 else "model_final.pt"
-    generate_images(checkpoint_name)
+    args = parser.parse_args()
+    
+    # If single image requested, just generate one
+    if args.prompt is not None:
+        # Generate single image
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print(f"🚀 Using device: {device}")
+        
+        # Initialize components
+        noise_scheduler = CosineNoiseScheduler(num_timesteps=config.TIMESTEPS).to(device)
+        unet = UNet(
+            in_channels=3,
+            out_channels=3,
+            base_channels=config.BASE_CHANNELS,
+            time_emb_dim=config.TIME_EMB_DIM,
+            text_emb_dim=config.TEXT_EMB_DIM
+        )
+        text_encoder = TextEncoder(device=device)
+        
+        # Load checkpoint
+        checkpoint_path = f"{config.CHECKPOINT_DIR}/{args.checkpoint}"
+        print(f"📂 Loading checkpoint: {checkpoint_path}")
+        
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+            unet.load_state_dict(checkpoint['model_state_dict'])
+            unet.to(device)
+            unet.eval()
+            print("✅ Checkpoint loaded successfully!")
+        except Exception as e:
+            print(f"❌ Error loading checkpoint: {e}")
+            print("💡 Available checkpoints:")
+            if os.path.exists(config.CHECKPOINT_DIR):
+                for f in os.listdir(config.CHECKPOINT_DIR):
+                    if f.endswith('.pt'):
+                        print(f"   • {f}")
+            exit(1)
+        
+        # Initialize sampler
+        sampler = DDPMSampler(noise_scheduler, unet, device)
+        
+        # Generate single image
+        print(f"🎨 Generating image for prompt: '{args.prompt}'")
+        with torch.no_grad():
+            # Encode text prompt
+            text_emb = text_encoder.encode_text([args.prompt])
+            
+            # Generate image
+            image = sampler.sample(
+                batch_size=1,
+                image_size=(3, config.IMAGE_SIZE, config.IMAGE_SIZE),
+                num_inference_steps=config.NUM_INFERENCE_STEPS,
+                text_embeddings=text_emb
+            )[0]
+        
+        # Save image
+        save_path = args.save_path or f"generated_{args.prompt.replace(' ', '_')}.png"
+        
+        # Convert to numpy and normalize for display
+        image_np = image.cpu().numpy().transpose(1, 2, 0)
+        image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())
+        
+        plt.figure(figsize=(4, 4))
+        plt.imshow(image_np)
+        plt.title(args.prompt)
+        plt.axis('off')
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"✅ Saved: {save_path}")
+    else:
+        # Generate default set
+        generate_images(args.checkpoint)
 
     
