@@ -153,10 +153,11 @@ def create_dataloader(
     batch_size: int = 8,
     image_size: int = 256,
     max_samples: Optional[int] = None,
-    num_workers: int = 2
+    num_workers: int = 2,
+    augment_data: bool = True
 ) -> DataLoader:
     """
-    Create a DataLoader for training.
+    Create a DataLoader for training with enhanced augmentation.
     
     Args:
         captions_file: Path to JSON captions file
@@ -165,17 +166,36 @@ def create_dataloader(
         image_size: Size to resize images to
         max_samples: Limit dataset size (useful for testing)
         num_workers: Number of worker processes
+        augment_data: Whether to apply data augmentation
     
     Returns:
         DataLoader ready for training
     """
     
-    # Standard diffusion model transforms
-    transform = transforms.Compose([
-        transforms.Resize((image_size, image_size)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # [-1, 1] range
-    ])
+    # Enhanced transforms for better training diversity
+    if augment_data:
+        transform = transforms.Compose([
+            transforms.Resize((image_size + 8, image_size + 8)),  # Slightly larger for crop
+            transforms.RandomCrop((image_size, image_size)),  # Random cropping
+            transforms.RandomHorizontalFlip(p=0.5),  # Random horizontal flip
+            transforms.ColorJitter(
+                brightness=0.1,  # Slight brightness variation
+                contrast=0.1,    # Slight contrast variation
+                saturation=0.1,  # Slight saturation variation
+                hue=0.05         # Very slight hue variation
+            ),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # [-1, 1] range
+        ])
+        print("🎨 Data augmentation enabled")
+    else:
+        # Standard transforms without augmentation
+        transform = transforms.Compose([
+            transforms.Resize((image_size, image_size)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # [-1, 1] range
+        ])
+        print("📷 Standard transforms only")
     
     # Create dataset
     dataset = ImageTextDataset(
@@ -185,14 +205,15 @@ def create_dataloader(
         max_samples=max_samples
     )
     
-    # Create dataloader
+    # Create dataloader with improved settings
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=num_workers,
+        num_workers=min(num_workers, 4),  # Cap workers to prevent overload
         pin_memory=torch.cuda.is_available(),
-        drop_last=True  # Consistent batch sizes
+        drop_last=True,  # Consistent batch sizes
+        persistent_workers=num_workers > 0  # Keep workers alive between epochs
     )
     
     return dataloader

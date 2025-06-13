@@ -36,6 +36,9 @@ RESUME_FROM_CHECKPOINT = None  # 🔥 START FRESH with optimized settings
 CAPTIONS_FILE = "/home/azureuser/Diffusion/data/unconditional/conditional/captions.json"
 IMAGES_DIR = "/home/azureuser/Diffusion/data/unconditional/conditional/images/"
 
+# Data augmentation settings
+USE_DATA_AUGMENTATION = True    # 🔥 NEW: Enhanced data augmentation for better diversity
+
 DEFAULT_PROMPTS = [
     None,  # Unconditional
     "A train",

@@ -79,36 +79,40 @@ class TrainingMonitor:
             print(f"⏱️  Estimated completion: {hours}h {minutes}m")
 
 def generate_sample_during_training(unet, noise_scheduler, text_encoder, device, epoch, monitor_dir):
-    """Generate sample images during training to track progress."""
+    """Generate sample images during training to track progress with enhanced quality."""
     
     print("🎨 Generating training samples...")
     
-    # Create a simple sampler for quick generation
+    # Create enhanced sampler
     sampler = DDPMSampler(noise_scheduler, unet, device=device)
     
     # Quick test prompts from config, fallback to defaults if not set
     test_prompts = getattr(config, "TEST_PROMPTS", [None, "A dog", "A truck"])
     
-    # Generate samples with fewer inference steps for speed
+    # Generate samples with fewer inference steps for speed but better quality
     with torch.no_grad():
         for i, prompt in enumerate(test_prompts):
             if prompt:
                 text_embeddings = text_encoder([prompt])
                 filename = f'{monitor_dir}/epoch_{epoch:03d}_sample_{i+1}_{prompt.replace(" ", "_")}.png'
+                guidance_scale = 1.5  # Light guidance for better conditioning
             else:
                 text_embeddings = None
                 filename = f'{monitor_dir}/epoch_{epoch:03d}_sample_{i+1}_unconditional.png'
+                guidance_scale = 1.0  # No guidance for unconditional
             
-            # Quick generation (fewer steps)
+            # Enhanced generation with better quality controls
             generated_image = sampler.sample(
                 batch_size=1,
                 image_size=(3, config.IMAGE_SIZE, config.IMAGE_SIZE),
-                num_inference_steps=10,  # Fast generation
-                text_embeddings=text_embeddings
+                num_inference_steps=15,  # Slightly more steps for better quality
+                text_embeddings=text_embeddings,
+                guidance_scale=guidance_scale,
+                dynamic_thresholding=True
             )
             
             if not torch.isnan(generated_image).any():
-                # Convert and save
+                # Convert and save with improved processing
                 img = (generated_image[0] + 1) / 2
                 img = torch.clamp(img, 0, 1)
                 img = img.detach().cpu().permute(1, 2, 0).numpy()
@@ -117,8 +121,12 @@ def generate_sample_during_training(unet, noise_scheduler, text_encoder, device,
                 plt.imshow(img)
                 plt.title(f"Epoch {epoch+1}: {prompt or 'Unconditional'}")
                 plt.axis('off')
-                plt.savefig(filename, dpi=100, bbox_inches='tight')
+                plt.savefig(filename, dpi=100, bbox_inches='tight', facecolor='white')
                 plt.close()
+            else:
+                print(f"⚠️  NaN detected in generated image for prompt: {prompt}")
+    
+    print("✅ Sample generation completed")
 
 def train_diffusion_model():
     """Train conditional diffusion model with enhanced monitoring."""
@@ -146,13 +154,14 @@ def train_diffusion_model():
     text_encoder = TextEncoder(device=device)
     trainer = DiffusionTrainer(unet, noise_scheduler, device=device, lr=config.LEARNING_RATE)
     
-    # Load dataset
+    # Load dataset with enhanced augmentation
     dataloader = create_dataloader(
         captions_file=config.CAPTIONS_FILE,
         images_dir=config.IMAGES_DIR,
         batch_size=config.BATCH_SIZE,
         image_size=config.IMAGE_SIZE,
-        max_samples=config.MAX_SAMPLES
+        max_samples=config.MAX_SAMPLES,
+        augment_data=getattr(config, 'USE_DATA_AUGMENTATION', True)
     )
     
     print(f"✅ Dataset loaded: {len(dataloader.dataset)} samples")
@@ -191,12 +200,29 @@ def train_diffusion_model():
                                           (batch_size_actual,), device=device)
             
             noisy_images, noise = noise_scheduler.add_noise(images, timesteps_batch)
-            predicted_noise = unet(noisy_images, timesteps_batch, text_embeddings)
-            loss = trainer.criterion(predicted_noise, noise)
             
+            # Use mixed precision if available
+            if trainer.use_amp:
+                with torch.cuda.amp.autocast():
+                    predicted_noise = unet(noisy_images, timesteps_batch, text_embeddings)
+                    loss = trainer.criterion(predicted_noise, noise)
+            else:
+                predicted_noise = unet(noisy_images, timesteps_batch, text_embeddings)
+                loss = trainer.criterion(predicted_noise, noise)
+            
+            # Improved backpropagation with gradient clipping
             trainer.optimizer.zero_grad()
-            loss.backward()
-            trainer.optimizer.step()
+            
+            if trainer.use_amp:
+                trainer.scaler.scale(loss).backward()
+                trainer.scaler.unscale_(trainer.optimizer)
+                torch.nn.utils.clip_grad_norm_(unet.parameters(), trainer.grad_clip_norm)
+                trainer.scaler.step(trainer.optimizer)
+                trainer.scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(unet.parameters(), trainer.grad_clip_norm)
+                trainer.optimizer.step()
             
             epoch_losses.append(loss.item())
             batch_time = time.time() - batch_start_time
@@ -221,6 +247,11 @@ def train_diffusion_model():
         # Log epoch results
         monitor.log_epoch(epoch, avg_loss, epoch_time)
         monitor.estimate_completion(epoch, config.NUM_EPOCHS)
+        
+        # Step learning rate scheduler
+        trainer.step_scheduler()
+        current_lr = trainer.get_current_lr()
+        print(f"📈 Learning rate: {current_lr:.2e}")
         
         # Generate sample images every few epochs
         if (epoch + 1) % max(1, config.CHECKPOINT_EVERY // 2) == 0:
