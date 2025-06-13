@@ -1,7 +1,7 @@
 import torch
-from conditional_diffusion_model.noise_scheduler import CosineNoiseScheduler
-from conditional_diffusion_model.unet import UNet
-from conditional_diffusion_model.trainer import DiffusionTrainer
+from conditional_diffusion.conditional_diffusion_model.noise_scheduler import CosineNoiseScheduler
+from conditional_diffusion.conditional_diffusion_model.unet import UNet
+from conditional_diffusion.conditional_diffusion_model.trainer import DiffusionTrainer
 
 def test_pipeline():
     """Test that all components work together."""
