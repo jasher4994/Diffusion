@@ -1,195 +1,211 @@
 import torch
-import matplotlib.pyplot as plt
 import os
 import argparse
-from conditional_diffusion.conditional_diffusion_model.noise_scheduler import CosineNoiseScheduler
-from conditional_diffusion.conditional_diffusion_model.unet import UNet
-from conditional_diffusion.conditional_diffusion_model.text_encoder import TextEncoder
-from conditional_diffusion.conditional_diffusion_model.sampler import DDPMSampler
+from PIL import Image
+import matplotlib.pyplot as plt
+
+from conditional_diffusion.noise_scheduler import CosineNoiseScheduler
+from conditional_diffusion.unet import UNet
+from conditional_diffusion.sampler import DDPMSampler
 import config
 
-def generate_images(checkpoint_name="model_final.pt"):
-    """Generate images using config settings and specified checkpoint."""
-    
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"🚀 Using device: {device}")
-    
-    print("🔧 Using config settings:")
-    print(f"  • Image size: {config.IMAGE_SIZE}x{config.IMAGE_SIZE}")
-    print(f"  • Timesteps: {config.TIMESTEPS}")
-    print(f"  • Inference steps: {config.NUM_INFERENCE_STEPS}")
-    print(f"  • Base channels: {config.BASE_CHANNELS}")
-    
-    # Initialize components from config
-    noise_scheduler = CosineNoiseScheduler(num_timesteps=config.TIMESTEPS).to(device)
+def tensor_to_image(tensor):
+    """Convert tensor to PIL Image."""
+    if tensor.dim() == 4:
+        tensor = tensor.squeeze(0)
+    tensor = tensor.detach().cpu()
+    tensor = (tensor.clamp(-1, 1) + 1) * 0.5
+    import torchvision.transforms.functional as TF
+    return TF.to_pil_image(tensor)
+
+def load_model(checkpoint_path, device='cuda'):
+    """Load model from checkpoint."""
     unet = UNet(
         in_channels=3,
         out_channels=3,
-        base_channels=config.BASE_CHANNELS,
         time_emb_dim=config.TIME_EMB_DIM,
-        text_emb_dim=config.TEXT_EMB_DIM
+        num_classes=10,
+        class_emb_dim=config.CLASS_EMB_DIM,
+        base_channels=config.BASE_CHANNELS,
+        image_size=config.IMAGE_SIZE
     )
-    text_encoder = TextEncoder(device=device)
     
-    # Load checkpoint
-    checkpoint_path = f"{config.CHECKPOINT_DIR}/{checkpoint_name}"
-    print(f"📂 Loading checkpoint: {checkpoint_path}")
-    
-    try:
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    if 'model_state_dict' in checkpoint:
         unet.load_state_dict(checkpoint['model_state_dict'])
-        unet.to(device)
-        unet.eval()
-        print("✅ Checkpoint loaded successfully!")
-    except Exception as e:
-        print(f"❌ Error loading checkpoint: {e}")
-        print("💡 Available checkpoints:")
-        if os.path.exists(config.CHECKPOINT_DIR):
-            for f in os.listdir(config.CHECKPOINT_DIR):
-                if f.endswith('.pt'):
-                    print(f"   • {f}")
-        return
+    else:
+        unet.load_state_dict(checkpoint)
     
-    # Create sampler
-    sampler = DDPMSampler(noise_scheduler, unet, device=device)
+    unet.to(device).eval()
     
-    # Get prompts from config - error if not found
-    if not hasattr(config, 'DEFAULT_PROMPTS'):
-        raise ValueError("DEFAULT_PROMPTS not found in config.py! Please add DEFAULT_PROMPTS list to config.")
+    noise_scheduler = CosineNoiseScheduler(num_timesteps=config.TIMESTEPS).to(device)
+    sampler = DDPMSampler(noise_scheduler, unet, device)
     
-    test_prompts = config.DEFAULT_PROMPTS
-    print(f"🎨 Generating {len(test_prompts)} images from config prompts...")
+    return unet, sampler
+
+def generate_class_samples(sampler, class_idx, num_samples=4, num_steps=50, save_dir=None, prefix=""):
+    """Generate samples for a specific class."""
+    class_name = config.CLASS_NAMES[class_idx]
     
-    # Create output directory
-    output_dir = "generated_images"
-    os.makedirs(output_dir, exist_ok=True)
+    print(f"Generating {num_samples} {class_name} images...")
     
     with torch.no_grad():
-        for i, prompt in enumerate(test_prompts):
-            print(f"\n--- Generating image {i+1}/{len(test_prompts)} ---")
-            
-            if prompt:
-                print(f"Prompt: '{prompt}'")
-                text_embeddings = text_encoder([prompt])
-                safe_prompt = prompt[:30].replace(" ", "_").replace("/", "_")
-                filename = f'{output_dir}/generated_{i+1}_{safe_prompt}.png'
-            else:
-                print("No prompt (unconditional)")
-                text_embeddings = None
-                filename = f'{output_dir}/generated_{i+1}_unconditional.png'
-            
-            # Generate image using config settings
-            generated_image = sampler.sample(
-                batch_size=1,
-                image_size=(3, config.IMAGE_SIZE, config.IMAGE_SIZE),
-                num_inference_steps=config.NUM_INFERENCE_STEPS,
-                text_embeddings=text_embeddings
-            )
-            
-            print(f"Generated range: [{generated_image.min():.3f}, {generated_image.max():.3f}]")
-            
-            if torch.isnan(generated_image).any():
-                print("❌ NaN detected in generation!")
-                continue
-            
-            # Convert to displayable format
-            img = (generated_image[0] + 1) / 2  # Convert from [-1,1] to [0,1]
-            img = torch.clamp(img, 0, 1)
-            img = img.detach().cpu().permute(1, 2, 0).numpy()
-            
-            # Save image
-            plt.figure(figsize=(6, 6))
-            plt.imshow(img)
-            plt.title(prompt if prompt else "Unconditional Generation", fontsize=10)
-            plt.axis('off')
-            plt.savefig(filename, dpi=150, bbox_inches='tight')
-            plt.close()
-            
-            print(f"✅ Saved: {filename}")
+        images = sampler.sample_class_conditional(
+            class_idx=class_idx,
+            num_samples=num_samples,
+            num_inference_steps=num_steps
+        )
     
-    print(f"\n🎉 Generation completed!")
-    print(f"🔍 Check the generated images in: {output_dir}/")
+    results = []
+    for i, img_tensor in enumerate(images):
+        if torch.isnan(img_tensor).any():
+            print(f"Warning: NaN detected in image {i+1}")
+            continue
+            
+        img = tensor_to_image(img_tensor)
+        results.append(img)
+        
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+            filename = f"{save_dir}/{prefix}{class_name}_{i+1}.png"
+            img.save(filename)
+            print(f"  Saved: {filename}")
+    
+    return results
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Generate images with diffusion model')
-    parser.add_argument('--checkpoint', type=str, default='model_final.pt', 
-                       help='Checkpoint filename (e.g., model_epoch_150.pt)')
-    parser.add_argument('--prompt', type=str, default=None,
-                       help='Text prompt for generation')
-    parser.add_argument('--save_path', type=str, default=None,
-                       help='Output path for generated image')
+def generate_all_classes(sampler, samples_per_class=2, num_steps=50, save_dir=None, prefix=""):
+    """Generate samples for all classes."""
+    print(f"Generating {samples_per_class} samples for each class...")
+    
+    all_results = {}
+    for class_idx, class_name in enumerate(config.CLASS_NAMES):
+        try:
+            images = generate_class_samples(
+                sampler, class_idx, samples_per_class, num_steps, save_dir, prefix
+            )
+            all_results[class_name] = images
+        except Exception as e:
+            print(f"Error generating {class_name}: {e}")
+            all_results[class_name] = []
+    
+    return all_results
+
+def generate_grid(sampler, grid_size=3, num_steps=50, save_path=None, classes=None):
+    """Generate a grid of images for visualization."""
+    total_samples = grid_size * grid_size
+    
+    if classes is None:
+        # Random classes
+        class_indices = torch.randint(0, 10, (total_samples,))
+    else:
+        # Cycle through provided classes
+        class_indices = torch.tensor([classes[i % len(classes)] for i in range(total_samples)])
+    
+    print(f"Generating {grid_size}x{grid_size} grid...")
+    
+    with torch.no_grad():
+        images = sampler.sample(
+            batch_size=total_samples,
+            class_labels=class_indices.to(sampler.device),
+            num_inference_steps=num_steps
+        )
+    
+    # Create grid visualization
+    fig, axes = plt.subplots(grid_size, grid_size, figsize=(12, 12))
+    axes = axes.flatten() if grid_size > 1 else [axes]
+    
+    for i, (img_tensor, class_idx) in enumerate(zip(images, class_indices)):
+        if i >= len(axes):
+            break
+            
+        if torch.isnan(img_tensor).any():
+            # Create black image for NaN
+            img = Image.new('RGB', (config.IMAGE_SIZE, config.IMAGE_SIZE), (0, 0, 0))
+        else:
+            img = tensor_to_image(img_tensor)
+        
+        axes[i].imshow(img)
+        axes[i].set_title(config.CLASS_NAMES[class_idx.item()])
+        axes[i].axis('off')
+    
+    # Hide unused subplots
+    for i in range(len(images), len(axes)):
+        axes[i].axis('off')
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Grid saved: {save_path}")
+    
+    plt.close()
+    return images
+
+def generate_training_samples(unet, noise_scheduler, device, epoch, save_dir, num_classes=5, num_steps=50):
+    """Generate samples during training (optimized for speed)."""
+    print(f"Generating training samples for epoch {epoch+1}...")
+    
+    sampler = DDPMSampler(noise_scheduler, unet, device)
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Generate samples for first few classes to keep it quick
+    for class_idx in range(min(num_classes, len(config.CLASS_NAMES))):
+        try:
+            images = generate_class_samples(
+                sampler, 
+                class_idx, 
+                num_samples=1, 
+                num_steps=num_steps,
+                save_dir=save_dir,
+                prefix=f"epoch_{epoch+1:03d}_"
+            )
+        except Exception as e:
+            print(f"  Error generating {config.CLASS_NAMES[class_idx]}: {e}")
+
+def main():
+    """CLI for generating images from trained models."""
+    parser = argparse.ArgumentParser(description='Generate images from trained diffusion model')
+    parser.add_argument('checkpoint', help='Path to model checkpoint')
+    parser.add_argument('--class', type=int, dest='class_idx', help='Class to generate (0-9)', default=None)
+    parser.add_argument('--samples', type=int, default=4, help='Number of samples to generate')
+    parser.add_argument('--steps', type=int, default=100, help='Number of inference steps')
+    parser.add_argument('--output', default='./generated', help='Output directory')
+    parser.add_argument('--all', action='store_true', help='Generate samples for all classes')
+    parser.add_argument('--grid', type=int, help='Generate NxN grid of random samples')
     
     args = parser.parse_args()
     
-    # If single image requested, just generate one
-    if args.prompt is not None:
-        # Generate single image
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        print(f"🚀 Using device: {device}")
-        
-        # Initialize components
-        noise_scheduler = CosineNoiseScheduler(num_timesteps=config.TIMESTEPS).to(device)
-        unet = UNet(
-            in_channels=3,
-            out_channels=3,
-            base_channels=config.BASE_CHANNELS,
-            time_emb_dim=config.TIME_EMB_DIM,
-            text_emb_dim=config.TEXT_EMB_DIM
-        )
-        text_encoder = TextEncoder(device=device)
-        
-        # Load checkpoint
-        checkpoint_path = f"{config.CHECKPOINT_DIR}/{args.checkpoint}"
-        print(f"📂 Loading checkpoint: {checkpoint_path}")
-        
-        try:
-            checkpoint = torch.load(checkpoint_path, map_location=device)
-            unet.load_state_dict(checkpoint['model_state_dict'])
-            unet.to(device)
-            unet.eval()
-            print("✅ Checkpoint loaded successfully!")
-        except Exception as e:
-            print(f"❌ Error loading checkpoint: {e}")
-            print("💡 Available checkpoints:")
-            if os.path.exists(config.CHECKPOINT_DIR):
-                for f in os.listdir(config.CHECKPOINT_DIR):
-                    if f.endswith('.pt'):
-                        print(f"   • {f}")
-            exit(1)
-        
-        # Initialize sampler
-        sampler = DDPMSampler(noise_scheduler, unet, device)
-        
-        # Generate single image
-        print(f"🎨 Generating image for prompt: '{args.prompt}'")
-        with torch.no_grad():
-            # Encode text prompt
-            text_emb = text_encoder.encode_text([args.prompt])
-            
-            # Generate image
-            image = sampler.sample(
-                batch_size=1,
-                image_size=(3, config.IMAGE_SIZE, config.IMAGE_SIZE),
-                num_inference_steps=config.NUM_INFERENCE_STEPS,
-                text_embeddings=text_emb
-            )[0]
-        
-        # Save image
-        save_path = args.save_path or f"generated_{args.prompt.replace(' ', '_')}.png"
-        
-        # Convert to numpy and normalize for display
-        image_np = image.cpu().numpy().transpose(1, 2, 0)
-        image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())
-        
-        plt.figure(figsize=(4, 4))
-        plt.imshow(image_np)
-        plt.title(args.prompt)
-        plt.axis('off')
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        plt.close()
-        print(f"✅ Saved: {save_path}")
-    else:
-        # Generate default set
-        generate_images(args.checkpoint)
-
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"Using device: {device}")
     
+    # Load model
+    try:
+        unet, sampler = load_model(args.checkpoint, device)
+        print(f"Model loaded from: {args.checkpoint}")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        return
+    
+    # Generate based on arguments
+    if args.grid:
+        grid_path = f"{args.output}/grid_{args.grid}x{args.grid}.png"
+        generate_grid(sampler, args.grid, args.steps, grid_path)
+        
+    elif args.all:
+        generate_all_classes(sampler, args.samples, args.steps, args.output)
+        
+    elif args.class_idx is not None:
+        if 0 <= args.class_idx <= 9:
+            generate_class_samples(sampler, args.class_idx, args.samples, args.steps, args.output)
+        else:
+            print("Class index must be between 0 and 9")
+            
+    else:
+        print("Please specify --class, --all, or --grid")
+        print("Examples:")
+        print(f"  python generate.py {args.checkpoint} --class 0 --samples 4")
+        print(f"  python generate.py {args.checkpoint} --all --samples 2")
+        print(f"  python generate.py {args.checkpoint} --grid 3")
+
+if __name__ == "__main__":
+    main()
