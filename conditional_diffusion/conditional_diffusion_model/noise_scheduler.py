@@ -1,7 +1,5 @@
 import torch
 import math
-from typing import Tuple
-import pdb
 
 
 class CosineNoiseScheduler:
@@ -45,89 +43,64 @@ class CosineNoiseScheduler:
         self.num_timesteps = num_timesteps
         self.s = s
         
-        # Create timestep array - simple array from 0 to num_timesteps
-        timesteps = torch.arange(0, num_timesteps + 1, dtype=torch.float32)
-
-        # Compute alpha_bar values from the tensor for timesteps using the cosine schedule.
-        # So each timestep has a corresponding alpha_bar value.
-        # Results in a smooth curve from 1 (at t=0) to 0 (at t=num_timesteps) if you plot the tensor
-        alphas_cumprod = torch.cos(((timesteps / num_timesteps) + s) / (1 + s) * math.pi * 0.5) ** 2
-
-        # Normalise the offsets after we added in the small offset s - get back to 1.0 at t=0
+        # Compute the cosine schedule
+        steps = torch.arange(num_timesteps + 1, dtype=torch.float32)
+        alphas_cumprod = torch.cos(((steps / num_timesteps) + s) / (1 + s) * math.pi * 0.5) ** 2
         alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-
-        # Store alpha_bar values (remove the last one to have exactly num_timesteps)
-        self.alphas_cumprod = alphas_cumprod[:-1]
         
-        # Compute betas from alphas_cumprod - more efficient than computing alphas directly.
-        # alpha(t) = alpha_bar(t) / alpha_bar(t-1)
-        # For t=0, we use alpha_bar(0) / 1.0
+        # Store alphas_cumprod (length: num_timesteps)
+        self.alphas_cumprod = alphas_cumprod[:-1]  # Remove the last element to get length num_timesteps
+        
+        # Create alphas_cumprod_prev by padding with 1.0 at the beginning
         alphas_cumprod_prev = torch.cat([torch.tensor([1.0]), self.alphas_cumprod[:-1]])
+        
+        # Compute individual alphas and betas
         self.alphas = self.alphas_cumprod / alphas_cumprod_prev
         self.betas = 1.0 - self.alphas
         
-        # Clamp betas to prevent numerical issues
-        self.betas = torch.clamp(self.betas, 0, 0.999)
-    
-    def add_noise(self, original_images: torch.Tensor, timesteps: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Pre-compute values for sampling
+        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
+        self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - self.alphas_cumprod)
+        
+        # For reverse process
+        self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
+        
+    def to(self, device):
+        """Move scheduler tensors to device."""
+        self.alphas = self.alphas.to(device)
+        self.betas = self.betas.to(device)
+        self.alphas_cumprod = self.alphas_cumprod.to(device)
+        self.sqrt_alphas_cumprod = self.sqrt_alphas_cumprod.to(device)
+        self.sqrt_one_minus_alphas_cumprod = self.sqrt_one_minus_alphas_cumprod.to(device)
+        self.sqrt_recip_alphas = self.sqrt_recip_alphas.to(device)
+        return self
+        
+    def add_noise(self, original_images, timesteps):
         """
-        Add noise to AT A SPECIFIC TIMESTEP using cosine schedule.
-
-        The important point here is that we use the reparameterization trick to add noise
-        at specific timesteps without iterating through each step. This allows us to
-        directly compute the noisy image at any timestep t using the cumulative alpha values.
-
-        This returns the noisy images and the CUMULATIVE noise that was added.
-        The image is how the image looks at that timestep, and the noise is the
-        random noise that was added to the original image to create the noisy image.
-
+        Add noise to images according to the schedule.
         
         Args:
             original_images: Clean images, shape (batch, channels, height, width)
-            timesteps: Which timestep to noise to, shape (batch,)
-        
+            timesteps: Timesteps for each image, shape (batch,)
+            
         Returns:
-            Tuple of (noisy_images, noise_that_was_added)
-
+            noisy_images: Images with noise added
+            noise: The noise that was added
         """
-        # Generate random noise with same shape as images
+        # Sample noise
         noise = torch.randn_like(original_images)
         
-        # Get the cumulative alpha values for the specific timesteps
-        # both of these tensors are computed to be used in the reparameterization trick
-        sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod[timesteps]) # to preserve the variance
-        sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - self.alphas_cumprod[timesteps]) 
+        # Get coefficients for the timesteps
+        sqrt_alphas_cumprod = self.sqrt_alphas_cumprod[timesteps]
+        sqrt_one_minus_alphas_cumprod = self.sqrt_one_minus_alphas_cumprod[timesteps]
         
         # Reshape for broadcasting (batch_size, 1, 1, 1)
         sqrt_alphas_cumprod = sqrt_alphas_cumprod.view(-1, 1, 1, 1)
         sqrt_one_minus_alphas_cumprod = sqrt_one_minus_alphas_cumprod.view(-1, 1, 1, 1)
         
-        # Apply noise using the reparameterization trick
-        # Only a portion of the noise is added based on the cumulative alpha values.
+        # Add noise: x_t = sqrt(alpha_cumprod) * x_0 + sqrt(1 - alpha_cumprod) * noise
         noisy_images = sqrt_alphas_cumprod * original_images + sqrt_one_minus_alphas_cumprod * noise
-
-        # This gives us the noisy image at a specific timestep and the amount of noise added.
-        # INPUT to model = noisy_images + timestep of those noisy images
-        # Target of model = predict the noise that was added to the original image.
         
-        # But we actually return the UNSCALED NOISE 
-        # Model actually learns to predict the UNSCALED noise 
-        # Loss compares the UNSCALED predicted v original UNSCALED noise
-        # HOWEVER we do not remove all of it, we scale it before we remove it in the denoising step.
-
-        # The model learns to predict the "unit" noise, and the denoising formula handles
-        # the appropriate scaling for each timestep.
-
-        # This design makes the model's job simpler - it always predicts "standard" noise regardless
-        # of timestep, and the math handles the rest!
-
         return noisy_images, noise
-    
-    def to(self, device):
-        """Move all tensors to the specified device."""
-        self.alphas_cumprod = self.alphas_cumprod.to(device)
-        self.alphas = self.alphas.to(device)
-        self.betas = self.betas.to(device)
-        return self
-    
+
 
