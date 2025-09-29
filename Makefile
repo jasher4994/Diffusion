@@ -4,29 +4,29 @@
 help:
 	@echo "Available commands:"
 	@echo "  make train     - Train the model with full dataset"
-	@echo "  make overfit   - Train with 1 sample per class (overfitting test)"
+	@echo "  make overfit   - Train with small dataset (quick test)"
 	@echo "  make clean     - Clean checkpoints and generated images"
 	@echo "  make clean-all - Clean everything including cache and logs"
 	@echo "  make clean-cuda- Clear CUDA memory cache"
+	@echo "  make generate  - Generate samples from trained model"
 	@echo "  make help      - Show this help message"
 
 # Train with full dataset
 train:
 	@echo "🚀 Starting full training..."
-	python train.py --full
+	cd conditional_diffusion && python train.py --epochs $(or $(EPOCHS),50)
 
-# Overfit training with 1 sample per class
+# Quick overfit test
 overfit:
-	@echo "🎯 Starting overfit training (1 sample per class)..."
-	python train.py --overfit --samples 1
+	@echo "🎯 Starting quick test training..."
+	cd conditional_diffusion && python train.py --epochs $(or $(EPOCHS),5)
 
 # Clean checkpoints and generated images
 clean:
 	@echo "🧹 Cleaning checkpoints and generated images..."
-	rm -rf checkpoints/
-	rm -rf checkpoints_overfit/
-	rm -rf generated_images/
-	rm -rf generated/
+	rm -rf conditional_diffusion/checkpoints/
+	rm -rf conditional_diffusion/outputs/
+	rm -rf conditional_diffusion/*.png
 	@echo "✅ Cleaned checkpoints and images"
 
 # Clean everything including cache and temporary files
@@ -52,24 +52,42 @@ clean-cuda:
 	python -c "import torch; torch.cuda.empty_cache(); print('CUDA cache cleared')" 2>/dev/null || echo "PyTorch not available or no CUDA"
 	@echo "✅ CUDA memory cleared"
 
-# Quick overfit test (shorthand)
-test: overfit
-
-# Train for longer (you can modify epochs in config.py)
-train-long:
-	@echo "🚀 Starting long training session..."
-	python train.py --full
-
 # Generate samples (assumes you have a checkpoint)
 generate:
 	@echo "🎨 Generating samples..."
-	@if [ -f "checkpoints/model_final.pt" ]; then \
-		python generate.py checkpoints/model_final.pt --samples 4; \
-	elif [ -f "checkpoints_overfit/model_final.pt" ]; then \
-		python generate.py checkpoints_overfit/model_final.pt --samples 4; \
+	@cd conditional_diffusion && \
+	if [ -f "checkpoints/quickdraw_final_epoch_50.pt" ]; then \
+		python generate.py --checkpoint checkpoints/quickdraw_final_epoch_50.pt --num-samples $(or $(SAMPLES),8); \
+	elif ls checkpoints/quickdraw_final_epoch_*.pt 1> /dev/null 2>&1; then \
+		LATEST=$$(ls -t checkpoints/quickdraw_final_epoch_*.pt | head -n1); \
+		echo "Using latest checkpoint: $$LATEST"; \
+		python generate.py --checkpoint $$LATEST --num-samples $(or $(SAMPLES),8); \
+	elif ls checkpoints/quickdraw_step_*.pt 1> /dev/null 2>&1; then \
+		LATEST=$$(ls -t checkpoints/quickdraw_step_*.pt | head -n1); \
+		echo "Using latest step checkpoint: $$LATEST"; \
+		python generate.py --checkpoint $$LATEST --num-samples $(or $(SAMPLES),8); \
 	else \
 		echo "❌ No checkpoint found. Train a model first with 'make train' or 'make overfit'"; \
 	fi
+
+# Generate specific class
+generate-class:
+	@echo "🎨 Generating samples for class $(or $(CLASS),0)..."
+	@cd conditional_diffusion && \
+	if [ -f "checkpoints/quickdraw_final_epoch_50.pt" ]; then \
+		python generate.py --checkpoint checkpoints/quickdraw_final_epoch_50.pt --class-id $(or $(CLASS),0) --num-samples $(or $(SAMPLES),4); \
+	elif ls checkpoints/quickdraw_final_epoch_*.pt 1> /dev/null 2>&1; then \
+		LATEST=$$(ls -t checkpoints/quickdraw_final_epoch_*.pt | head -n1); \
+		echo "Using latest checkpoint: $$LATEST"; \
+		python generate.py --checkpoint $$LATEST --class-id $(or $(CLASS),0) --num-samples $(or $(SAMPLES),4); \
+	else \
+		echo "❌ No checkpoint found. Train a model first with 'make train' or 'make overfit'"; \
+	fi
+
+# List available classes
+list-classes:
+	@echo "📋 Available classes:"
+	cd conditional_diffusion && python generate.py --list-classes
 
 # Check GPU status
 gpu-status:
@@ -78,33 +96,20 @@ gpu-status:
 	@echo ""
 	@python -c "import torch; print(f'PyTorch CUDA available: {torch.cuda.is_available()}'); print(f'CUDA devices: {torch.cuda.device_count()}'); print(f'Current device: {torch.cuda.current_device() if torch.cuda.is_available() else \"N/A\"}')" 2>/dev/null || echo "PyTorch not available"
 
-# Show training progress (if checkpoints exist)
+# Show training status
 status:
 	@echo "📊 Training Status:"
-	@if [ -d "checkpoints" ]; then \
-		echo "Regular training checkpoints:"; \
-		ls -la checkpoints/*.pt 2>/dev/null || echo "  No regular checkpoints found"; \
+	@if [ -d "conditional_diffusion/checkpoints" ]; then \
+		echo "Checkpoints:"; \
+		ls -la conditional_diffusion/checkpoints/*.pt 2>/dev/null || echo "  No checkpoints found"; \
 	fi
-	@if [ -d "checkpoints_overfit" ]; then \
-		echo "Overfit training checkpoints:"; \
-		ls -la checkpoints_overfit/*.pt 2>/dev/null || echo "  No overfit checkpoints found"; \
-	fi
-	@if [ -d "generated_images" ] || [ -d "generated" ]; then \
+	@if [ -d "conditional_diffusion/outputs" ]; then \
 		echo "Generated images:"; \
-		ls -la generated_images/ generated/ 2>/dev/null || echo "  No generated images found"; \
+		ls -la conditional_diffusion/outputs/*.png 2>/dev/null || echo "  No generated images found"; \
 	fi
 
-# Install dependencies
-install:
-	@echo "📦 Installing dependencies..."
-	pip install -r requirements.txt
-	@echo "✅ Dependencies installed"
-
-# Quick test to see if everything works
-quick-test:
-	@echo "🧪 Quick test (2 epochs overfit)..."
-	python -c "import config; config.NUM_EPOCHS = 2" 
-	python train.py --overfit --samples 1
+# Quick test (shorthand for overfit)
+test: overfit
 
 # Monitor GPU usage while training
 monitor:
