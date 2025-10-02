@@ -87,8 +87,8 @@ Icon
 # Model output/weights that are too large
 models/*/*_weights.pth
 checkpoints/
+checkpoints_overfit/
 trained_models/
-
 # Environment configuration
 .env
 .envrc
