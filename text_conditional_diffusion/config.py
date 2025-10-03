@@ -6,7 +6,7 @@ LEARNING_RATE = 1e-4
 TIMESTEPS = 1000
 
 # Model architecture
-CHANNELS = 64
+CHANNELS = 128
 TIME_DIM = 128
 TEXT_DIM = 512  # CLIP embedding dimension
 

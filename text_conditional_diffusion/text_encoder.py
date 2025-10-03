@@ -8,8 +8,6 @@ class CLIPTextEncoder(nn.Module):
     """Wrapper around CLIP text encoder for diffusion conditioning.
     
     Clip effectively maps images and text to the same latent space.
-
-    Given this text embedding, produce an image that CLIP would associate with it.
     
     """
 
@@ -34,11 +32,9 @@ class CLIPTextEncoder(nn.Module):
         Returns:
             Text embeddings of shape [batch_size, embedding_dim]
         """
-        # Handle single string
         if isinstance(text_prompts, str):
             text_prompts = [text_prompts]
 
-        # Tokenize
         tokens = self.tokenizer(
             text_prompts,
             padding=True,
@@ -47,10 +43,8 @@ class CLIPTextEncoder(nn.Module):
             return_tensors="pt"
         ).to(self.text_model.device)
 
-        # Get embeddings
         with torch.set_grad_enabled(self.text_model.training):
             outputs = self.text_model(**tokens)
-            # Use pooled output (CLS token embedding)
             embeddings = outputs.pooler_output  # [batch_size, 512]
 
         return embeddings
