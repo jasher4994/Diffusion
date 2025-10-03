@@ -44,6 +44,12 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
         freeze=config.FREEZE_CLIP
     ).to(device)
 
+    # Multi-GPU support
+    if torch.cuda.device_count() > 1:
+        print(f"🚀 Using {torch.cuda.device_count()} GPUs with DataParallel")
+        model = nn.DataParallel(model)
+        text_encoder = nn.DataParallel(text_encoder)
+
     # Optimizer (only model parameters, CLIP is frozen)
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
@@ -104,8 +110,10 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
         # Save checkpoint every N epochs
         if (epoch + 1) % save_every_epochs == 0:
             checkpoint_path = f"checkpoints/text_diffusion_epoch_{epoch+1}.pt"
+            # Handle DataParallel wrapper
+            model_to_save = model.module if hasattr(model, 'module') else model
             torch.save({
-                'model_state_dict': model.state_dict(),
+                'model_state_dict': model_to_save.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'step': step,
                 'epoch': epoch + 1,
@@ -119,8 +127,10 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
 
     # Save final model
     final_path = f"checkpoints/text_diffusion_final_epoch_{epochs}.pt"
+    # Handle DataParallel wrapper
+    model_to_save = model.module if hasattr(model, 'module') else model
     torch.save({
-        'model_state_dict': model.state_dict(),
+        'model_state_dict': model_to_save.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'step': step,
         'epoch': epochs,
