@@ -54,7 +54,7 @@ overfit: overfit-simple
 # Train text model with full dataset
 train-text:
 	@echo "🚀 Starting text-conditional model training..."
-	cd text_conditional_diffusion && python train.py --epochs $(or $(EPOCHS),5)
+	cd text_conditional_diffusion && python train.py $(if $(EPOCHS),--epochs $(EPOCHS),)
 
 # Quick overfit test for text model
 overfit-text:
