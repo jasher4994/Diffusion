@@ -60,7 +60,6 @@ class TextConditionedUNet(nn.Module):
         super().__init__()
         self.text_dim = text_dim
 
-        # Time embeddings
         self.time_emb = TimeEmbedding(config.TIME_DIM)
         self.time_mlp = nn.Sequential(
             nn.Linear(config.TIME_DIM, config.TIME_DIM),
@@ -68,7 +67,6 @@ class TextConditionedUNet(nn.Module):
             nn.Linear(config.TIME_DIM, config.TIME_DIM)
         )
 
-        # Text projection (CLIP embeddings are already 512-dim, just project if needed)
         self.text_proj = nn.Sequential(
             nn.Linear(text_dim, text_dim),
             nn.SiLU(),

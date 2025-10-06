@@ -22,9 +22,18 @@ def tensor_to_image(tensor):
     return transform(tensor.squeeze(0))
 
 
-def generate_samples(checkpoint_path, prompt="a drawing of a cat", num_samples=4, device='cuda'):
-    """Generate samples using text prompts."""
+def generate_samples(checkpoint_path, prompt="a drawing of a cat", num_samples=4, guidance_scale=3.0, device='cuda'):
+    """Generate samples using text prompts with classifier-free guidance.
+
+    Args:
+        checkpoint_path: Path to model checkpoint
+        prompt: Text prompt for generation
+        num_samples: Number of samples to generate
+        guidance_scale: CFG scale (1.0 = no guidance, 3.0-7.0 typical, higher = stronger)
+        device: Device to use
+    """
     print(f"🎨 Generating {num_samples} samples with prompt: '{prompt}'")
+    print(f"📊 Guidance scale: {guidance_scale}")
 
     # Load checkpoint
     if not os.path.exists(checkpoint_path):
@@ -68,7 +77,7 @@ def generate_samples(checkpoint_path, prompt="a drawing of a cat", num_samples=4
     with torch.no_grad():
         # Generate all samples in a batch
         shape = (num_samples, 1, config.IMAGE_SIZE, config.IMAGE_SIZE)
-        samples = scheduler.sample_text(model, shape, text_embeddings, device)
+        samples = scheduler.sample_text(model, shape, text_embeddings, device, guidance_scale)
 
         # Save each sample
         for i in range(num_samples):
@@ -94,6 +103,8 @@ def main():
                        help='Text prompt for generation')
     parser.add_argument('--num-samples', type=int, default=4,
                        help='Number of samples to generate (default: 4)')
+    parser.add_argument('--guidance-scale', type=float, default=config.CFG_GUIDANCE_SCALE,
+                       help=f'Classifier-free guidance scale (1.0 = no guidance, 3.0-7.0 typical, default: {config.CFG_GUIDANCE_SCALE})')
     parser.add_argument('--device', type=str, default='cuda',
                        help='Device to use (default: cuda)')
 
@@ -104,7 +115,7 @@ def main():
         print("⚠️ CUDA not available, using CPU")
         args.device = 'cpu'
 
-    generate_samples(args.checkpoint, args.prompt, args.num_samples, args.device)
+    generate_samples(args.checkpoint, args.prompt, args.num_samples, args.guidance_scale, args.device)
 
 
 if __name__ == "__main__":

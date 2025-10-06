@@ -52,10 +52,27 @@ class SimpleDDPMScheduler:
 
         return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
 
-    def p_sample_text(self, model, x, t, text_embeddings):
-        """Sample x_{t-1} from x_t using the model with text conditioning."""
-        # Get model prediction
+    def p_sample_text(self, model, x, t, text_embeddings, guidance_scale=1.0):
+        """Sample x_{t-1} from x_t using the model with text conditioning and CFG.
+
+        Args:
+            model: The diffusion model
+            x: Current noisy image
+            t: Current timestep
+            text_embeddings: Text embeddings for conditioning
+            guidance_scale: Classifier-free guidance scale (1.0 = no guidance, higher = stronger)
+        """
+        # Get model prediction with text conditioning
         predicted_noise = model(x, t, text_embeddings)
+
+        # Apply classifier-free guidance if scale > 1.0
+        if guidance_scale > 1.0:
+            # Also get unconditional prediction (with zero text embeddings)
+            uncond_embeddings = torch.zeros_like(text_embeddings)
+            uncond_noise = model(x, t, uncond_embeddings)
+
+            # Amplify the difference between conditional and unconditional
+            predicted_noise = uncond_noise + guidance_scale * (predicted_noise - uncond_noise)
 
         # Get coefficients
         betas_t = extract(self.betas, t, x.shape)
@@ -76,14 +93,22 @@ class SimpleDDPMScheduler:
             noise = torch.randn_like(x)
             return model_mean + torch.sqrt(posterior_variance_t) * noise
 
-    def sample_text(self, model, shape, text_embeddings, device="cuda"):
-        """Generate samples using DDPM sampling with text conditioning."""
+    def sample_text(self, model, shape, text_embeddings, device="cuda", guidance_scale=1.0):
+        """Generate samples using DDPM sampling with text conditioning and CFG.
+
+        Args:
+            model: The diffusion model
+            shape: Output shape (B, C, H, W)
+            text_embeddings: Text embeddings for conditioning
+            device: Device to use
+            guidance_scale: Classifier-free guidance scale (1.0 = no guidance, 3.0-7.0 typical)
+        """
         b = shape[0]
         img = torch.randn(shape, device=device)
 
         for i in reversed(range(0, self.num_timesteps)):
             t = torch.full((b,), i, device=device, dtype=torch.long)
-            img = self.p_sample_text(model, img, t, text_embeddings)
+            img = self.p_sample_text(model, img, t, text_embeddings, guidance_scale)
 
             # Clamp to prevent explosion
             img = torch.clamp(img, -2.0, 2.0)

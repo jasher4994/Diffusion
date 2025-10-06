@@ -19,7 +19,48 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
     if epochs is None:
         epochs = config.NUM_EPOCHS
 
-    print(f"🚀 Starting text-conditional diffusion training for {epochs} epochs")
+    # Print configuration summary
+    print("\n" + "="*60)
+    print("🚀 TEXT-CONDITIONAL DIFFUSION TRAINING")
+    print("="*60)
+
+    # GPU Information
+    print("\n📍 GPU Configuration:")
+    if torch.cuda.is_available():
+        num_gpus = torch.cuda.device_count()
+        print(f"   Number of GPUs: {num_gpus}")
+        for i in range(num_gpus):
+            gpu_name = torch.cuda.get_device_name(i)
+            gpu_mem = torch.cuda.get_device_properties(i).total_memory / 1024**3
+            print(f"   GPU {i}: {gpu_name} ({gpu_mem:.1f} GB)")
+    else:
+        print(f"   Device: CPU (CUDA not available)")
+
+    # Training Configuration
+    print("\n⚙️  Training Configuration:")
+    print(f"   Epochs: {epochs}")
+    print(f"   Batch size: {config.BATCH_SIZE}")
+    print(f"   Learning rate: {config.LEARNING_RATE}")
+    print(f"   Image size: {config.IMAGE_SIZE}x{config.IMAGE_SIZE}")
+    print(f"   Timesteps: {config.TIMESTEPS}")
+
+    # Model Architecture
+    print("\n🏗️  Model Architecture:")
+    print(f"   Channels: {config.CHANNELS}")
+    print(f"   Time dim: {config.TIME_DIM}")
+    print(f"   Text dim: {config.TEXT_DIM}")
+    print(f"   CLIP model: {config.CLIP_MODEL}")
+    print(f"   CLIP frozen: {config.FREEZE_CLIP}")
+    print(f"   CFG drop prob: {config.CFG_DROP_PROB}")
+    print(f"   CFG guidance scale: {config.CFG_GUIDANCE_SCALE}")
+
+    # Dataset Information
+    print("\n📂 Dataset:")
+    print(f"   Dataset: {config.DATASET_NAME}")
+    print(f"   Number of classes: {config.NUM_CLASSES_FILTER}")
+    print(f"   Max samples: {max_samples if max_samples else 'All'}")
+
+    print("\n" + "="*60 + "\n")
 
     # Create dataset and dataloader
     print("📂 Loading dataset...")
@@ -28,6 +69,10 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
         max_samples=max_samples,
         num_classes=config.NUM_CLASSES_FILTER
     )
+
+    print(f"✓ Dataset loaded: {len(dataset)} samples")
+    print(f"✓ Classes: {dataset.class_names}")
+
     dataloader = DataLoader(
         dataset,
         batch_size=config.BATCH_SIZE,
@@ -37,7 +82,7 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
     )
 
     # Create models
-    print("🏗️ Creating models...")
+    print("\n🏗️ Creating models...")
     model = TextConditionedUNet(text_dim=config.TEXT_DIM).to(device)
     text_encoder = CLIPTextEncoder(
         model_name=config.CLIP_MODEL,
@@ -48,7 +93,7 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
     if torch.cuda.device_count() > 1:
         print(f"🚀 Using {torch.cuda.device_count()} GPUs with DataParallel")
         model = nn.DataParallel(model)
-        text_encoder = nn.DataParallel(text_encoder)
+        # Don't wrap text_encoder - it processes strings, not tensors
 
     # Optimizer (only model parameters, CLIP is frozen)
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
@@ -57,8 +102,10 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
     scheduler = SimpleDDPMScheduler(config.TIMESTEPS)
     criterion = nn.MSELoss()
 
-    print(f"📊 Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-    print(f"📊 CLIP frozen: {config.FREEZE_CLIP}")
+    print(f"✓ Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"✓ Batches per epoch: {len(dataloader)}")
+    print(f"✓ Total training steps: {epochs * len(dataloader):,}")
+    print("\n" + "="*60 + "\n")
 
     # Create checkpoint directory
     os.makedirs("checkpoints", exist_ok=True)
@@ -78,6 +125,11 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
             # Encode text prompts with CLIP
             with torch.no_grad():  # CLIP is frozen
                 text_embeddings = text_encoder(text_prompts)
+
+            # Classifier-free guidance: randomly drop text conditioning
+            # This teaches the model to work both with and without text
+            cfg_mask = torch.rand(images.shape[0], device=device) < config.CFG_DROP_PROB
+            text_embeddings[cfg_mask] = 0.0  # Zero out text embeddings for unconditional
 
             # Sample random timesteps
             timesteps = torch.randint(0, config.TIMESTEPS, (images.shape[0],), device=device)
