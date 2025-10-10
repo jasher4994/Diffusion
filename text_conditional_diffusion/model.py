@@ -121,11 +121,9 @@ class TextConditionedUNet(nn.Module):
 
 
 if __name__ == "__main__":
-    # Test model
     print("Testing Text-Conditioned U-Net...")
     model = TextConditionedUNet(text_dim=512)
 
-    # Test forward pass
     batch_size = 2
     x = torch.randn(batch_size, 1, 64, 64)
     t = torch.randint(0, 1000, (batch_size,))
