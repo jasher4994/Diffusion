@@ -19,23 +19,19 @@ class QuickDrawTextDataset(Dataset):
         dataset = load_dataset(config.DATASET_NAME)
         self.dataset = dataset[split]
 
-        # Get class names from the ClassLabel feature
         self.label_feature = self.dataset.features['label']
         self.all_class_names = self.label_feature.names
 
-        # Filter to specific number of classes if requested
         if num_classes is not None:
             selected_label_ids = list(range(num_classes))
             selected_class_names = [self.all_class_names[i] for i in selected_label_ids]
             print(f"   Filtering to {num_classes} classes: {selected_class_names}")
 
-            # Filter dataset to only include selected classes
             self.dataset = self.dataset.filter(lambda x: x['label'] in selected_label_ids)
 
         if max_samples is not None:
             self.dataset = self.dataset.select(range(min(max_samples, len(self.dataset))))
 
-        # Get actual class names (not IDs)
         unique_label_ids = sorted(set(self.dataset['label']))
         self.class_names = [self.all_class_names[i] for i in unique_label_ids]
         self.num_classes = len(self.class_names)

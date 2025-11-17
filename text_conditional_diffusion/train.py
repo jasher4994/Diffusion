@@ -19,13 +19,11 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
     if epochs is None:
         epochs = config.NUM_EPOCHS
 
-    # Print configuration summary
     print("\n" + "="*60)
-    print("🚀 TEXT-CONDITIONAL DIFFUSION TRAINING")
+    print(" TEXT-CONDITIONAL DIFFUSION TRAINING")
     print("="*60)
 
-    # GPU Information
-    print("\n📍 GPU Configuration:")
+    print("\n GPU Configuration:")
     if torch.cuda.is_available():
         num_gpus = torch.cuda.device_count()
         print(f"   Number of GPUs: {num_gpus}")
@@ -36,16 +34,14 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
     else:
         print(f"   Device: CPU (CUDA not available)")
 
-    # Training Configuration
-    print("\n⚙️  Training Configuration:")
+    print("\n  Training Configuration:")
     print(f"   Epochs: {epochs}")
     print(f"   Batch size: {config.BATCH_SIZE}")
     print(f"   Learning rate: {config.LEARNING_RATE}")
     print(f"   Image size: {config.IMAGE_SIZE}x{config.IMAGE_SIZE}")
     print(f"   Timesteps: {config.TIMESTEPS}")
 
-    # Model Architecture
-    print("\n🏗️  Model Architecture:")
+    print("\n  Model Architecture:")
     print(f"   Channels: {config.CHANNELS}")
     print(f"   Time dim: {config.TIME_DIM}")
     print(f"   Text dim: {config.TEXT_DIM}")
@@ -54,7 +50,6 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
     print(f"   CFG drop prob: {config.CFG_DROP_PROB}")
     print(f"   CFG guidance scale: {config.CFG_GUIDANCE_SCALE}")
 
-    # Dataset Information
     print("\n📂 Dataset:")
     print(f"   Dataset: {config.DATASET_NAME}")
     print(f"   Number of classes: {config.NUM_CLASSES_FILTER}")
@@ -62,8 +57,7 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
 
     print("\n" + "="*60 + "\n")
 
-    # Create dataset and dataloader
-    print("📂 Loading dataset...")
+    print(" Loading dataset...")
     dataset = QuickDrawTextDataset(
         split="train",
         max_samples=max_samples,
@@ -81,7 +75,7 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
         pin_memory=True
     )
 
-    # Create models
+
     print("\n🏗️ Creating models...")
     model = TextConditionedUNet(text_dim=config.TEXT_DIM).to(device)
     text_encoder = CLIPTextEncoder(
@@ -89,16 +83,16 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
         freeze=config.FREEZE_CLIP
     ).to(device)
 
-    # Multi-GPU support
+
     if torch.cuda.device_count() > 1:
         print(f"🚀 Using {torch.cuda.device_count()} GPUs with DataParallel")
         model = nn.DataParallel(model)
-        # Don't wrap text_encoder - it processes strings, not tensors
 
-    # Optimizer (only model parameters, CLIP is frozen)
+
+
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
-    # Scheduler and loss
+
     scheduler = SimpleDDPMScheduler(config.TIMESTEPS)
     criterion = nn.MSELoss()
 
@@ -107,10 +101,10 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
     print(f"✓ Total training steps: {epochs * len(dataloader):,}")
     print("\n" + "="*60 + "\n")
 
-    # Create checkpoint directory
+
     os.makedirs("checkpoints", exist_ok=True)
 
-    # Training loop
+
     model.train()
     text_encoder.eval()  # Keep CLIP in eval mode even if not frozen
     step = 0
@@ -122,7 +116,7 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
         for batch_idx, (images, text_prompts) in enumerate(pbar):
             images = images.to(device)
 
-            # Encode text prompts with CLIP
+
             with torch.no_grad():  # CLIP is frozen
                 text_embeddings = text_encoder(text_prompts)
 
@@ -131,20 +125,19 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
             cfg_mask = torch.rand(images.shape[0], device=device) < config.CFG_DROP_PROB
             text_embeddings[cfg_mask] = 0.0  # Zero out text embeddings for unconditional
 
-            # Sample random timesteps
             timesteps = torch.randint(0, config.TIMESTEPS, (images.shape[0],), device=device)
 
-            # Add noise to images
+
             noise = torch.randn_like(images)
             noisy_images = scheduler.q_sample(images, timesteps, noise)
 
-            # Predict noise
+
             predicted_noise = model(noisy_images, timesteps, text_embeddings)
 
-            # Compute loss
+
             loss = criterion(predicted_noise, noise)
 
-            # Backward pass
+
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -153,16 +146,16 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
             epoch_loss += loss.item()
             step += 1
 
-            # Update progress bar
+
             pbar.set_postfix({'loss': f'{loss.item():.4f}'})
 
         avg_loss = epoch_loss / len(dataloader)
-        print(f"📊 Epoch {epoch+1} average loss: {avg_loss:.4f}")
+        print(f"Epoch {epoch+1} average loss: {avg_loss:.4f}")
 
-        # Save checkpoint every N epochs
+
         if (epoch + 1) % save_every_epochs == 0:
             checkpoint_path = f"checkpoints/text_diffusion_epoch_{epoch+1}.pt"
-            # Handle DataParallel wrapper
+
             model_to_save = model.module if hasattr(model, 'module') else model
             torch.save({
                 'model_state_dict': model_to_save.state_dict(),
@@ -175,11 +168,11 @@ def train_text_conditional(epochs=None, save_every_epochs=5, max_samples=None, d
                     'clip_model': config.CLIP_MODEL,
                 }
             }, checkpoint_path)
-            print(f"💾 Saved checkpoint: {checkpoint_path}")
+            print(f"Saved checkpoint: {checkpoint_path}")
 
-    # Save final model
+
     final_path = f"checkpoints/text_diffusion_final_epoch_{epochs}.pt"
-    # Handle DataParallel wrapper
+
     model_to_save = model.module if hasattr(model, 'module') else model
     torch.save({
         'model_state_dict': model_to_save.state_dict(),
@@ -208,9 +201,9 @@ def main():
 
     args = parser.parse_args()
 
-    # Check device availability
+
     if args.device == 'cuda' and not torch.cuda.is_available():
-        print("⚠️ CUDA not available, using CPU")
+        print("CUDA not available, using CPU")
         args.device = 'cpu'
 
     train_text_conditional(args.epochs, args.save_every_epochs, args.max_samples, args.device)
