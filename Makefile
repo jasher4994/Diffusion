@@ -1,6 +1,6 @@
 .PHONY: train overfit clean clean-all clean-cuda help
 .PHONY: train-simple train-text overfit-simple overfit-text
-.PHONY: generate-simple generate-text clean-simple clean-text
+.PHONY: generate-simple generate-text clean-simple clean-text visualize-text
 
 # Default target
 help:
@@ -16,6 +16,7 @@ help:
 	@echo "  make train-text        - Train text-conditional model"
 	@echo "  make overfit-text      - Quick test training (text model)"
 	@echo "  make generate-text     - Generate samples from text model"
+	@echo "  make visualize-text    - Visualize denoising process over time"
 	@echo "  make clean-text        - Clean text model checkpoints"
 	@echo ""
 	@echo "General:"
@@ -143,6 +144,21 @@ generate-text:
 		LATEST=$$(ls -t checkpoints/*_epoch_*.pt | head -n1); \
 		echo "Using latest checkpoint: $$LATEST"; \
 		python generate.py --checkpoint $$LATEST --prompt "$(or $(PROMPT),a cat and dog)" --num-samples $(or $(SAMPLES),4); \
+	else \
+		echo "❌ No checkpoint found. Train a model first with 'make train-text'"; \
+	fi
+
+visualize-text:
+	@echo "🎬 Visualizing denoising process..."
+	@cd text_conditional_diffusion && \
+	if ls checkpoints/*_final_epoch_*.pt 1> /dev/null 2>&1; then \
+		LATEST=$$(ls -t checkpoints/*_final_epoch_*.pt | head -n1); \
+		echo "Using latest checkpoint: $$LATEST"; \
+		python visualize_generation.py --checkpoint $$LATEST --prompt "$(or $(PROMPT),a drawing of a fire truck)" --num-steps $(or $(STEPS),10); \
+	elif ls checkpoints/*_epoch_*.pt 1> /dev/null 2>&1; then \
+		LATEST=$$(ls -t checkpoints/*_epoch_*.pt | head -n1); \
+		echo "Using latest checkpoint: $$LATEST"; \
+		python visualize_generation.py --checkpoint $$LATEST --prompt "$(or $(PROMPT),a drawing of a fire truck)" --num-steps $(or $(STEPS),10); \
 	else \
 		echo "❌ No checkpoint found. Train a model first with 'make train-text'"; \
 	fi

@@ -1,5 +1,4 @@
 # Text-Conditional Diffusion Configuration
-# Optimized for 4x Tesla V100 (16GB each) - Proof of Concept
 IMAGE_SIZE = 64
 BATCH_SIZE = 128  # 32 per GPU across 4 GPUs
 NUM_EPOCHS = 100  # Longer training for better text conditioning
