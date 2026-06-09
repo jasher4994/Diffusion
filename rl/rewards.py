@@ -15,7 +15,9 @@ import torch
 from rl.metrics import symmetry_l2
 
 
-def vsym_l2(x0: torch.Tensor, prompts: list[str] | None = None, meta: dict | None = None) -> torch.Tensor:
+def vsym_l2(
+    x0: torch.Tensor, prompts: list[str] | None = None, meta: dict | None = None
+) -> torch.Tensor:
     """Vertical-symmetry reward, per-sample. Returns shape [B].
 
     r_i = -mean_{pixels}((x_i - flip_horizontal(x_i))^2)

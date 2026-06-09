@@ -36,20 +36,23 @@ from rl.eval import evaluate_checkpoint, write_run_skeleton
 # Trajectory storage
 # ---------------------------------------------------------------------------
 
+
 @dataclasses.dataclass
 class Trajectory:
     """Stored data from one rollout (all on CPU to keep memory tight)."""
-    x_ts: list[torch.Tensor]          # length T_inf, each [B, C, H, W]
-    x_prevs: list[torch.Tensor]       # length T_inf, each [B, C, H, W]
-    log_probs_old: list[torch.Tensor] # length T_inf, each [B]
-    text_emb: torch.Tensor            # [B, text_dim]
-    prompt_idx: torch.Tensor          # [B] — which prompt each row corresponds to
-    final_x0: torch.Tensor            # [B, C, H, W]
+
+    x_ts: list[torch.Tensor]  # length T_inf, each [B, C, H, W]
+    x_prevs: list[torch.Tensor]  # length T_inf, each [B, C, H, W]
+    log_probs_old: list[torch.Tensor]  # length T_inf, each [B]
+    text_emb: torch.Tensor  # [B, text_dim]
+    prompt_idx: torch.Tensor  # [B] — which prompt each row corresponds to
+    final_x0: torch.Tensor  # [B, C, H, W]
 
 
 # ---------------------------------------------------------------------------
 # Rollout
 # ---------------------------------------------------------------------------
+
 
 @torch.no_grad()
 def rollout(
@@ -73,7 +76,12 @@ def rollout(
     for step_idx in range(rls.num_inference_steps):
         x_t_in = x  # what we feed the model
         x_prev, log_prob, _mean, _std = rls.p_step_with_logprob(
-            model, x, step_idx, text_emb, cfg_scale=cfg_scale, generator=gen,
+            model,
+            x,
+            step_idx,
+            text_emb,
+            cfg_scale=cfg_scale,
+            generator=gen,
         )
         x_ts.append(x_t_in.detach().cpu())
         x_prevs.append(x_prev.detach().cpu())
@@ -95,7 +103,10 @@ def rollout(
 # Advantage
 # ---------------------------------------------------------------------------
 
-def group_relative_advantages(rewards: torch.Tensor, prompt_idx: torch.Tensor) -> torch.Tensor:
+
+def group_relative_advantages(
+    rewards: torch.Tensor, prompt_idx: torch.Tensor
+) -> torch.Tensor:
     """A_i = r_i - mean(r_j : prompt_idx[j] == prompt_idx[i])."""
     adv = torch.zeros_like(rewards)
     for p in prompt_idx.unique():
@@ -108,12 +119,13 @@ def group_relative_advantages(rewards: torch.Tensor, prompt_idx: torch.Tensor) -
 # Update step
 # ---------------------------------------------------------------------------
 
+
 def update_step(
     model: torch.nn.Module,
     ref_model: torch.nn.Module,
     rls: RLScheduler,
     traj: Trajectory,
-    advantages: torch.Tensor,   # [B]
+    advantages: torch.Tensor,  # [B]
     *,
     eps_clip: float,
     beta: float,
@@ -140,15 +152,22 @@ def update_step(
 
         # Re-score the action under the CURRENT policy (with grad).
         _x_prev, log_prob_new, mean_new, std = rls.p_step_with_logprob(
-            model, x_t, step_idx, text_emb, cfg_scale=cfg_scale,
-            generator=None, prev_sample=x_prev,
+            model,
+            x_t,
+            step_idx,
+            text_emb,
+            cfg_scale=cfg_scale,
+            generator=None,
+            prev_sample=x_prev,
         )
 
         # Reference policy's mean (no grad).
         with torch.no_grad():
             t_model = torch.full(
-                (x_t.shape[0],), int(rls.timesteps[step_idx]),
-                device=device, dtype=torch.long,
+                (x_t.shape[0],),
+                int(rls.timesteps[step_idx]),
+                device=device,
+                dtype=torch.long,
             )
             eps_ref = ref_model(x_t, t_model, text_emb)
             if cfg_scale > 1.0:
@@ -171,7 +190,9 @@ def update_step(
 
         # --- KL term -------------------------------------------------------
         # For 𝒩(μ_θ, σ²·I) and 𝒩(μ_ref, σ²·I), KL = ‖μ_θ - μ_ref‖² / (2σ²).
-        kl_per_sample = ((mean_new - mean_ref) ** 2).flatten(1).sum(dim=1) / (2.0 * variance)
+        kl_per_sample = ((mean_new - mean_ref) ** 2).flatten(1).sum(dim=1) / (
+            2.0 * variance
+        )
         loss_kl_step = kl_per_sample.mean()
 
         loss_step = loss_pg_step + beta * loss_kl_step
@@ -182,7 +203,12 @@ def update_step(
         sum_loss_pg += loss_pg_step.detach().item()
         sum_loss_kl += loss_kl_step.detach().item()
         sum_ratio += ratio.detach().mean().item()
-        sum_clip_frac += ((ratio.detach() < 1 - eps_clip) | (ratio.detach() > 1 + eps_clip)).float().mean().item()
+        sum_clip_frac += (
+            ((ratio.detach() < 1 - eps_clip) | (ratio.detach() > 1 + eps_clip))
+            .float()
+            .mean()
+            .item()
+        )
         sum_logp_diff_sq += (log_ratio.detach() ** 2).mean().item()
         n_pg_steps += 1
 
@@ -200,6 +226,7 @@ def update_step(
 # Main training loop
 # ---------------------------------------------------------------------------
 
+
 def train(cfg: RunConfig) -> None:
     random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
@@ -208,13 +235,17 @@ def train(cfg: RunConfig) -> None:
     print(f"[trainer] device={device}")
 
     # Load policy + frozen reference.
-    model, text_encoder, base_scheduler, meta = load_pretrained(cfg.base_ckpt, device=device)
+    model, text_encoder, base_scheduler, meta = load_pretrained(
+        cfg.base_ckpt, device=device
+    )
     print(f"[trainer] loaded base ckpt: {meta}")
     ref_model = clone_frozen(model)
 
     rls = RLScheduler(base_scheduler, num_inference_steps=cfg.t_inf)
-    print(f"[trainer] using {rls.num_inference_steps} respaced timesteps "
-          f"(every {1000 // cfg.t_inf}-th)")
+    print(
+        f"[trainer] using {rls.num_inference_steps} respaced timesteps "
+        f"(every {1000 // cfg.t_inf}-th)"
+    )
 
     reward_fn = REWARDS[cfg.reward_name]
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
@@ -234,16 +265,27 @@ def train(cfg: RunConfig) -> None:
     def baseline_eval(step: int) -> dict:
         model.eval()
         art = evaluate_checkpoint(
-            model=model, text_encoder=text_encoder, scheduler=base_scheduler,
-            prompts=cfg.eval_prompts, n_seeds=cfg.eval_n_seeds, cfg_scale=cfg.cfg_scale,
-            device=device, run_dir=run_dir, step=step, base_seed=0,
+            model=model,
+            text_encoder=text_encoder,
+            scheduler=base_scheduler,
+            prompts=cfg.eval_prompts,
+            n_seeds=cfg.eval_n_seeds,
+            cfg_scale=cfg.cfg_scale,
+            device=device,
+            run_dir=run_dir,
+            step=step,
+            base_seed=0,
         )
         model.train()
         return art.metrics
 
-    print(f"[trainer] running step-0 baseline eval ({len(cfg.eval_prompts)*cfg.eval_n_seeds} samples)...")
+    print(
+        f"[trainer] running step-0 baseline eval ({len(cfg.eval_prompts)*cfg.eval_n_seeds} samples)..."
+    )
     eval0 = baseline_eval(0)
-    print(f"[trainer] step 0 baseline: symmetry_l2_mean={eval0['symmetry_l2_mean']:.4f}")
+    print(
+        f"[trainer] step 0 baseline: symmetry_l2_mean={eval0['symmetry_l2_mean']:.4f}"
+    )
 
     for step in tqdm(range(1, cfg.n_steps + 1), desc="grpo"):
         t_start = time.time()
@@ -253,15 +295,20 @@ def train(cfg: RunConfig) -> None:
             dtype=torch.long,
         )
         # Repeat each prompt `group_size` times.
-        prompt_idx = idx.repeat_interleave(cfg.group_size)   # [B]
-        text_emb = all_text_emb[prompt_idx].to(device)        # [B, text_dim]
+        prompt_idx = idx.repeat_interleave(cfg.group_size)  # [B]
+        text_emb = all_text_emb[prompt_idx].to(device)  # [B, text_dim]
 
         # ---- Rollout (no grad) ----
         rollout_seed = cfg.seed * 100003 + step
         traj = rollout(
-            model, rls, text_emb, prompt_idx,
-            cfg_scale=cfg.cfg_scale, device=device,
-            image_size=rl_config.IMAGE_SIZE, seed=rollout_seed,
+            model,
+            rls,
+            text_emb,
+            prompt_idx,
+            cfg_scale=cfg.cfg_scale,
+            device=device,
+            image_size=rl_config.IMAGE_SIZE,
+            seed=rollout_seed,
         )
 
         # ---- Reward + advantage ----
@@ -272,11 +319,19 @@ def train(cfg: RunConfig) -> None:
         # ---- Update ----
         optimizer.zero_grad(set_to_none=True)
         upd = update_step(
-            model, ref_model, rls, traj, advantages,
-            eps_clip=cfg.eps_clip, beta=cfg.beta,
-            cfg_scale=cfg.cfg_scale, device=device,
+            model,
+            ref_model,
+            rls,
+            traj,
+            advantages,
+            eps_clip=cfg.eps_clip,
+            beta=cfg.beta,
+            cfg_scale=cfg.cfg_scale,
+            device=device,
         )
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip).item()
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            model.parameters(), cfg.grad_clip
+        ).item()
         optimizer.step()
 
         # ---- Log ----
@@ -303,9 +358,11 @@ def train(cfg: RunConfig) -> None:
         if step % cfg.eval_every == 0 or step == cfg.n_steps:
             print(f"\n[trainer] step {step} eval...")
             m = baseline_eval(step)
-            print(f"[trainer] step {step}: reward={row['reward_mean']:.3f}  "
-                  f"kl={row['kl_to_ref']:.3f}  "
-                  f"sym_l2={m['symmetry_l2_mean']:.4f}")
+            print(
+                f"[trainer] step {step}: reward={row['reward_mean']:.3f}  "
+                f"kl={row['kl_to_ref']:.3f}  "
+                f"sym_l2={m['symmetry_l2_mean']:.4f}"
+            )
 
     # ---- Final checkpoint ----
     ckpt_path = run_dir / "checkpoints" / f"step_{cfg.n_steps:06d}.pt"
@@ -317,6 +374,7 @@ def train(cfg: RunConfig) -> None:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _cli() -> int:
     p = argparse.ArgumentParser(description=__doc__)
@@ -330,8 +388,12 @@ def _cli() -> int:
     p.add_argument("--cfg-scale", type=float, default=5.0)
     p.add_argument("--eval-every", type=int, default=25)
     p.add_argument("--eval-n-seeds", type=int, default=8)
-    p.add_argument("--eval-prompts", nargs="+", default=None,
-                   help="Override eval prompts (default: all 5 trained prompts).")
+    p.add_argument(
+        "--eval-prompts",
+        nargs="+",
+        default=None,
+        help="Override eval prompts (default: all 5 trained prompts).",
+    )
     p.add_argument("--device", default="cuda")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--reward", default="vsym_l2")
@@ -348,7 +410,9 @@ def _cli() -> int:
         cfg_scale=args.cfg_scale,
         eval_every=args.eval_every,
         eval_n_seeds=args.eval_n_seeds,
-        eval_prompts=(args.eval_prompts if args.eval_prompts else list(rl_config.TRAINED_PROMPTS)),
+        eval_prompts=(
+            args.eval_prompts if args.eval_prompts else list(rl_config.TRAINED_PROMPTS)
+        ),
         device=args.device,
         seed=args.seed,
         reward_name=args.reward,

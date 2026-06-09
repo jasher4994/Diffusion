@@ -13,6 +13,7 @@ per-run directory contract described in plans/PLAN_RL.md:
 Usable standalone via `python -m rl.eval --base-ckpt ... --run-id ...` to
 seed the dashboard with a baseline run before any training happens.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,6 +34,7 @@ from rl.model_loader import load_pretrained, pick_device
 # ---------------------------------------------------------------------------
 # Sampling
 # ---------------------------------------------------------------------------
+
 
 @torch.no_grad()
 def generate_samples(
@@ -86,11 +88,15 @@ def _sample_from(scheduler, model, x_T, text_emb, cfg_scale, device):
     replicate its loop to inject our own deterministic start.
     """
     from tqdm import tqdm
+
     img = x_T.to(device)
     b = img.shape[0]
-    for i in tqdm(reversed(range(scheduler.num_timesteps)),
-                  total=scheduler.num_timesteps,
-                  desc=f"sample[B={b}]", leave=False):
+    for i in tqdm(
+        reversed(range(scheduler.num_timesteps)),
+        total=scheduler.num_timesteps,
+        desc=f"sample[B={b}]",
+        leave=False,
+    ):
         t = torch.full((b,), i, device=device, dtype=torch.long)
         img = scheduler.p_sample_text(model, img, t, text_emb, cfg_scale)
         img = torch.clamp(img, -2.0, 2.0)
@@ -100,6 +106,7 @@ def _sample_from(scheduler, model, x_T, text_emb, cfg_scale, device):
 # ---------------------------------------------------------------------------
 # Sample-grid writing
 # ---------------------------------------------------------------------------
+
 
 def _to_pil(x: torch.Tensor) -> Image.Image:
     """Convert a single [1,H,W] tensor in [-1,1] to a PIL L-mode image."""
@@ -126,7 +133,9 @@ def write_grid(
     unique_seeds = sorted(set(seeds_per_sample))
 
     # Build a lookup: (prompt, seed) -> tensor index
-    idx_of = {(p, s): i for i, (p, s) in enumerate(zip(prompts_per_sample, seeds_per_sample))}
+    idx_of = {
+        (p, s): i for i, (p, s) in enumerate(zip(prompts_per_sample, seeds_per_sample))
+    }
 
     h = w = images.shape[-1]
     rows, cols = len(unique_prompts), len(unique_seeds)
@@ -144,17 +153,23 @@ def write_grid(
     grid.save(grid_path)
 
     # Manifest helps the dashboard render labels.
-    (out_dir / "manifest.json").write_text(json.dumps({
-        "rows": unique_prompts,
-        "cols": unique_seeds,
-        "tile_size": h,
-    }, indent=2))
+    (out_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "rows": unique_prompts,
+                "cols": unique_seeds,
+                "tile_size": h,
+            },
+            indent=2,
+        )
+    )
     return grid_path
 
 
 # ---------------------------------------------------------------------------
 # Run-directory ops
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class EvalArtifacts:
@@ -179,9 +194,14 @@ def evaluate_checkpoint(
 ) -> EvalArtifacts:
     """Generate samples + write PNGs + write metrics.json. Returns paths."""
     images, p_per, s_per = generate_samples(
-        model, text_encoder, scheduler,
-        prompts=prompts, n_seeds=n_seeds, cfg_scale=cfg_scale,
-        device=device, base_seed=base_seed,
+        model,
+        text_encoder,
+        scheduler,
+        prompts=prompts,
+        n_seeds=n_seeds,
+        cfg_scale=cfg_scale,
+        device=device,
+        base_seed=base_seed,
     )
     sample_dir = run_dir / "samples" / f"step_{step:06d}"
     grid_path = write_grid(images, p_per, s_per, sample_dir)
@@ -205,25 +225,36 @@ def write_run_skeleton(run_dir: Path, cfg_dict: dict) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _cli() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--base-ckpt", default=rl_config.DEFAULT_BASE_CKPT,
-                   help="Local path or 'hf:repo:filename'.")
-    p.add_argument("--run-id", default="base",
-                   help="Directory name under runs/ to write into.")
+    p.add_argument(
+        "--base-ckpt",
+        default=rl_config.DEFAULT_BASE_CKPT,
+        help="Local path or 'hf:repo:filename'.",
+    )
+    p.add_argument(
+        "--run-id", default="base", help="Directory name under runs/ to write into."
+    )
     p.add_argument("--runs-dir", default=rl_config.RUNS_DIR)
     p.add_argument("--prompts", nargs="+", default=list(rl_config.TRAINED_PROMPTS))
     p.add_argument("--n-seeds", type=int, default=8)
     p.add_argument("--cfg-scale", type=float, default=5.0)
-    p.add_argument("--step", type=int, default=0,
-                   help="Step label for this snapshot (use 0 for a 'base' eval).")
+    p.add_argument(
+        "--step",
+        type=int,
+        default=0,
+        help="Step label for this snapshot (use 0 for a 'base' eval).",
+    )
     p.add_argument("--device", default="cuda")
     p.add_argument("--base-seed", type=int, default=0)
     args = p.parse_args()
 
     device = pick_device(args.device)
     print(f"Loading model on {device} from {args.base_ckpt}")
-    model, text_encoder, scheduler, meta = load_pretrained(args.base_ckpt, device=device)
+    model, text_encoder, scheduler, meta = load_pretrained(
+        args.base_ckpt, device=device
+    )
     print(f"Loaded ckpt meta: {meta}")
 
     run_dir = Path(args.runs_dir) / args.run_id
@@ -234,15 +265,21 @@ def _cli() -> int:
         "eval_prompts": list(args.prompts),
         "eval_n_seeds": args.n_seeds,
         "cfg_scale": args.cfg_scale,
-        "kind": "eval-only",   # marks runs that have no training log
+        "kind": "eval-only",  # marks runs that have no training log
     }
     write_run_skeleton(run_dir, cfg_record)
 
     print(f"Generating {len(args.prompts) * args.n_seeds} samples...")
     art = evaluate_checkpoint(
-        model=model, text_encoder=text_encoder, scheduler=scheduler,
-        prompts=args.prompts, n_seeds=args.n_seeds, cfg_scale=args.cfg_scale,
-        device=device, run_dir=run_dir, step=args.step,
+        model=model,
+        text_encoder=text_encoder,
+        scheduler=scheduler,
+        prompts=args.prompts,
+        n_seeds=args.n_seeds,
+        cfg_scale=args.cfg_scale,
+        device=device,
+        run_dir=run_dir,
+        step=args.step,
         base_seed=args.base_seed,
     )
     print(f"Wrote samples to: {art.sample_dir}")

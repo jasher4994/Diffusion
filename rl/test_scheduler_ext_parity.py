@@ -27,6 +27,7 @@ def run_baseline(model, scheduler, text_emb, shape, device, seed):
         # Replicate p_sample_text logic but use our generator for the noise.
         predicted_noise = model(img, t, text_emb)
         from text_conditional_diffusion.scheduler import extract  # local import
+
         betas_t = extract(scheduler.betas, t, img.shape)
         sqrt_one_minus = extract(scheduler.sqrt_one_minus_alphas_cumprod, t, img.shape)
         sqrt_recip_alphas = extract(1.0 / torch.sqrt(scheduler.alphas), t, img.shape)
@@ -48,7 +49,12 @@ def run_new(model, base_scheduler, text_emb, shape, device, seed):
     img = torch.randn(shape, generator=gen, device=device)
     for step_idx in range(rls.num_inference_steps):
         img, _logp, _mean, _std = rls.p_step_with_logprob(
-            model, img, step_idx, text_emb, cfg_scale=1.0, generator=gen,
+            model,
+            img,
+            step_idx,
+            text_emb,
+            cfg_scale=1.0,
+            generator=gen,
         )
         img = torch.clamp(img, -2.0, 2.0)
     return img

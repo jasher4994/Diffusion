@@ -6,6 +6,7 @@ defined in `plans/PLAN_RL.md`). Start with:
 
     uvicorn dashboard.server:app --reload --port 8000
 """
+
 from __future__ import annotations
 
 import json
@@ -27,6 +28,7 @@ app = FastAPI(title="Diffusion RL Dashboard", docs_url="/api/docs")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _run_dir(run_id: str) -> Path:
     """Resolve and safety-check a run directory under RUNS_DIR."""
@@ -78,6 +80,7 @@ def _sample_steps(run: Path) -> list[int]:
 # API
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/runs")
 def list_runs() -> list[dict]:
     """Summary of every run on disk (id, config, available sample steps)."""
@@ -88,12 +91,16 @@ def list_runs() -> list[dict]:
         if not d.is_dir():
             continue
         cfg = _read_json(d / "config.json") or {}
-        out.append({
-            "run_id": d.name,
-            "config": cfg,
-            "n_log_rows": sum(1 for _ in (d / "log.jsonl").open()) if (d / "log.jsonl").exists() else 0,
-            "sample_steps": _sample_steps(d),
-        })
+        out.append(
+            {
+                "run_id": d.name,
+                "config": cfg,
+                "n_log_rows": sum(1 for _ in (d / "log.jsonl").open())
+                if (d / "log.jsonl").exists()
+                else 0,
+                "sample_steps": _sample_steps(d),
+            }
+        )
     return out
 
 
@@ -118,12 +125,14 @@ def run_samples(run_id: str) -> list[dict]:
     out = []
     for step in _sample_steps(run):
         step_dir = run / "samples" / f"step_{step:06d}"
-        out.append({
-            "step": step,
-            "grid_url": f"/runs/{run_id}/samples/step_{step:06d}/grid.png",
-            "manifest": _read_json(step_dir / "manifest.json"),
-            "metrics": _read_json(step_dir / "metrics.json"),
-        })
+        out.append(
+            {
+                "step": step,
+                "grid_url": f"/runs/{run_id}/samples/step_{step:06d}/grid.png",
+                "manifest": _read_json(step_dir / "manifest.json"),
+                "metrics": _read_json(step_dir / "metrics.json"),
+            }
+        )
     return out
 
 

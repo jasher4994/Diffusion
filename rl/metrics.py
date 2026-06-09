@@ -9,6 +9,7 @@ Convention: images `x` are tensors of shape `[B, C, H, W]` in the range
 metrics return *non-positive* values where 0 is perfect symmetry, matching
 the reward convention used in `rewards.py`.
 """
+
 from __future__ import annotations
 
 from typing import Iterable, Sequence
@@ -20,6 +21,7 @@ import torch.nn.functional as F
 # ---------------------------------------------------------------------------
 # Symmetry scores
 # ---------------------------------------------------------------------------
+
 
 def _hflip(x: torch.Tensor) -> torch.Tensor:
     """Horizontal flip (axis=W). Mirrors left↔right => tests vertical symmetry."""
@@ -42,10 +44,13 @@ def symmetry_l1(x: torch.Tensor) -> torch.Tensor:
     return -diff.abs().mean(dim=(-3, -2, -1))
 
 
-def _gaussian_kernel(window_size: int = 11, sigma: float = 1.5,
-                     channels: int = 1, device=None) -> torch.Tensor:
-    coords = torch.arange(window_size, dtype=torch.float32, device=device) - window_size // 2
-    g1d = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+def _gaussian_kernel(
+    window_size: int = 11, sigma: float = 1.5, channels: int = 1, device=None
+) -> torch.Tensor:
+    coords = (
+        torch.arange(window_size, dtype=torch.float32, device=device) - window_size // 2
+    )
+    g1d = torch.exp(-(coords**2) / (2 * sigma**2))
     g1d = g1d / g1d.sum()
     g2d = g1d[:, None] * g1d[None, :]
     return g2d.expand(channels, 1, window_size, window_size).contiguous()
@@ -76,7 +81,7 @@ def symmetry_ssim(x: torch.Tensor, window_size: int = 11) -> torch.Tensor:
     sigma_yy = filt(y01 * y01) - mu_yy
     sigma_xy = filt(x01 * y01) - mu_xy
 
-    C1, C2 = 0.01 ** 2, 0.03 ** 2
+    C1, C2 = 0.01**2, 0.03**2
     num = (2 * mu_xy + C1) * (2 * sigma_xy + C2)
     den = (mu_xx + mu_yy + C1) * (sigma_xx + sigma_yy + C2)
     ssim_map = num / den.clamp(min=1e-12)
@@ -88,6 +93,7 @@ def symmetry_ssim(x: torch.Tensor, window_size: int = 11) -> torch.Tensor:
 # Diversity / collapse detection
 # ---------------------------------------------------------------------------
 
+
 def diversity(x: torch.Tensor) -> torch.Tensor:
     """Mean pairwise pixel-L2 distance across the batch.
 
@@ -96,7 +102,7 @@ def diversity(x: torch.Tensor) -> torch.Tensor:
     """
     if x.shape[0] < 2:
         return torch.zeros((), device=x.device)
-    flat = x.flatten(start_dim=1)              # [B, D]
+    flat = x.flatten(start_dim=1)  # [B, D]
     # ||a-b||^2 = ||a||^2 + ||b||^2 - 2 a·b ; numerically OK at our scales.
     sq = (flat * flat).sum(dim=1, keepdim=True)
     d2 = sq + sq.T - 2 * flat @ flat.T
@@ -117,17 +123,25 @@ def per_pixel_std(x: torch.Tensor) -> torch.Tensor:
 # KL between policy and reference diffusion steps
 # ---------------------------------------------------------------------------
 
-def gaussian_kl(mean_p: torch.Tensor, std_p: torch.Tensor,
-                mean_q: torch.Tensor, std_q: torch.Tensor,
-                reduce: str = "mean") -> torch.Tensor:
+
+def gaussian_kl(
+    mean_p: torch.Tensor,
+    std_p: torch.Tensor,
+    mean_q: torch.Tensor,
+    std_q: torch.Tensor,
+    reduce: str = "mean",
+) -> torch.Tensor:
     """Closed-form KL( N(mean_p, std_p^2) || N(mean_q, std_q^2) ) per dim.
 
     Inputs broadcast; reduction is over all dims by default.
     """
     var_p = std_p.pow(2)
     var_q = std_q.pow(2)
-    kl = torch.log(std_q / std_p.clamp(min=1e-12)) + \
-        (var_p + (mean_p - mean_q).pow(2)) / (2 * var_q.clamp(min=1e-12)) - 0.5
+    kl = (
+        torch.log(std_q / std_p.clamp(min=1e-12))
+        + (var_p + (mean_p - mean_q).pow(2)) / (2 * var_q.clamp(min=1e-12))
+        - 0.5
+    )
     if reduce == "sum":
         return kl.sum()
     if reduce == "mean":
@@ -139,6 +153,7 @@ def gaussian_kl(mean_p: torch.Tensor, std_p: torch.Tensor,
 # Group-wise aggregation utility
 # ---------------------------------------------------------------------------
 
+
 def aggregate_by_group(values: torch.Tensor, group_keys: Sequence) -> dict:
     """Return `{key: mean(values[mask])}` for each unique key in `group_keys`.
 
@@ -147,8 +162,9 @@ def aggregate_by_group(values: torch.Tensor, group_keys: Sequence) -> dict:
     out: dict = {}
     keys = list(group_keys)
     for k in sorted(set(keys)):
-        mask = torch.tensor([gk == k for gk in keys], dtype=torch.bool,
-                            device=values.device)
+        mask = torch.tensor(
+            [gk == k for gk in keys], dtype=torch.bool, device=values.device
+        )
         out[str(k)] = float(values[mask].mean().item())
     return out
 
@@ -156,6 +172,7 @@ def aggregate_by_group(values: torch.Tensor, group_keys: Sequence) -> dict:
 # ---------------------------------------------------------------------------
 # One-shot eval bundle
 # ---------------------------------------------------------------------------
+
 
 def all_image_metrics(x: torch.Tensor, prompts: Iterable[str] | None = None) -> dict:
     """Compute every per-image metric we currently care about, plus per-prompt

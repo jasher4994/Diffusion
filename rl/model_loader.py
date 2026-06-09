@@ -3,6 +3,7 @@
 Bridges the existing `text_conditional_diffusion/` package (which uses bare
 `import config`) into the `rl/` package without modifying it.
 """
+
 from __future__ import annotations
 
 import os
@@ -27,10 +28,11 @@ def _ensure_tcd_on_path() -> None:
 def _import_tcd():
     """Import model / scheduler / text_encoder from the original module."""
     _ensure_tcd_on_path()
-    import config as tcd_config           # noqa: F401  (registers module)
+    import config as tcd_config  # noqa: F401  (registers module)
     from model import TextConditionedUNet
     from scheduler import SimpleDDPMScheduler
     from text_encoder import CLIPTextEncoder
+
     return tcd_config, TextConditionedUNet, SimpleDDPMScheduler, CLIPTextEncoder
 
 
@@ -45,6 +47,7 @@ def resolve_checkpoint(spec: str) -> str:
     if spec.startswith("hf:"):
         _, repo_id, filename = spec.split(":", 2)
         from huggingface_hub import hf_hub_download
+
         return hf_hub_download(repo_id=repo_id, filename=filename)
 
     path = Path(spec)
@@ -94,6 +97,7 @@ def load_pretrained(
 def clone_frozen(model: torch.nn.Module) -> torch.nn.Module:
     """Return a deep-copied, frozen, eval-mode clone of `model` on the same device."""
     import copy
+
     ref = copy.deepcopy(model)
     ref.eval()
     for p in ref.parameters():

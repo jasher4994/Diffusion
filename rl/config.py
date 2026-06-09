@@ -2,6 +2,7 @@
 
 A run-config dict (loaded from JSON/YAML by sweep.py) overrides these.
 """
+
 from dataclasses import dataclass, asdict, field
 from typing import Optional
 
@@ -12,7 +13,9 @@ RUNS_DIR = "runs"
 
 # ---- Base model source ----
 # Either a local checkpoint path, or "hf:<repo_id>:<filename>" for HF Hub.
-DEFAULT_BASE_CKPT = "hf:jamesaasher/quickdraw-text-diffusion:text_diffusion_final_epoch_100.pt"
+DEFAULT_BASE_CKPT = (
+    "hf:jamesaasher/quickdraw-text-diffusion:text_diffusion_final_epoch_100.pt"
+)
 
 # ---- Image / model dims (inherited from text_conditional_diffusion/config.py) ----
 IMAGE_SIZE = 64
@@ -43,16 +46,16 @@ class RunConfig:
     seed: int = 0
 
     # GRPO core
-    beta: float = 0.04            # KL-to-ref coefficient
-    group_size: int = 8           # K rollouts per prompt
-    eps_clip: float = 0.2         # PPO ratio clip
-    n_steps: int = 200            # outer training steps
-    ppo_inner_epochs: int = 1     # passes over each rollout batch
+    beta: float = 0.04  # KL-to-ref coefficient
+    group_size: int = 8  # K rollouts per prompt
+    eps_clip: float = 0.2  # PPO ratio clip
+    n_steps: int = 200  # outer training steps
+    ppo_inner_epochs: int = 1  # passes over each rollout batch
 
     # Rollout
-    t_inf: int = 50               # respaced DDPM steps for rollouts
+    t_inf: int = 50  # respaced DDPM steps for rollouts
     cfg_scale: float = 5.0
-    prompts_per_step: int = 2     # B_prompts; total batch = B_prompts * group_size
+    prompts_per_step: int = 2  # B_prompts; total batch = B_prompts * group_size
 
     # Optimiser
     lr: float = 1e-5
@@ -62,12 +65,12 @@ class RunConfig:
     reward_name: str = "vsym_l2"
 
     # Eval / checkpointing cadence
-    eval_every: int = 25          # outer steps between samples + checkpoint dump
+    eval_every: int = 25  # outer steps between samples + checkpoint dump
     eval_prompts: list = field(default_factory=lambda: list(TRAINED_PROMPTS))
-    eval_n_seeds: int = 8         # fixed seeds per prompt in eval grid
+    eval_n_seeds: int = 8  # fixed seeds per prompt in eval grid
 
     # Hardware
-    device: str = "cuda"          # falls back to cpu / mps in code if unavailable
+    device: str = "cuda"  # falls back to cpu / mps in code if unavailable
 
     def to_dict(self) -> dict:
         return asdict(self)
