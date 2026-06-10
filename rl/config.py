@@ -48,13 +48,13 @@ class RunConfig:
     # GRPO core
     beta: float = 0.04  # KL-to-ref coefficient
     group_size: int = 8  # K rollouts per prompt
-    eps_clip: float = 0.2  # PPO ratio clip
+    eps_clip: float = 0.2  # PPO ratio clip - make sure rho does not drift too far from 1.0
     n_steps: int = 200  # outer training steps
     ppo_inner_epochs: int = 1  # passes over each rollout batch
 
     # Rollout
     t_inf: int = 50  # respaced DDPM steps for rollouts
-    cfg_scale: float = 5.0
+    cfg_scale: float = 5.0 # guidance scale for rollout sampling (0.0 = no guidance, 1.0 = same as training, >1.0 = stronger)
     prompts_per_step: int = 2  # B_prompts; total batch = B_prompts * group_size
 
     # Optimiser

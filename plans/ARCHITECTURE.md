@@ -107,3 +107,92 @@ runs/<run_id>/
 │       └── metrics.json     # symmetry_l2/l1/ssim_mean + by_prompt, diversity, per_pixel_std
 └── final_metrics.json
 ```
+
+## 5. Simplified code-file flow
+
+A reader-friendlier view of how the modules call each other at runtime.
+
+```mermaid
+flowchart TD
+    sweep[sweep.py] --> trainer
+
+    subgraph entry [Entry point]
+      trainer[trainer.py]
+    end
+
+    subgraph setup [Setup]
+      config[config.py]
+      loader[model_loader.py]
+    end
+
+    subgraph rollout [Rollout]
+      sched[scheduler_ext.py]
+      rewards[rewards.py]
+    end
+
+    subgraph evalblk [Periodic eval]
+      eval[eval.py]
+      metrics[metrics.py]
+    end
+
+    subgraph base [Pretrained base — untouched]
+      tcd_model[model.py]
+      tcd_sched[scheduler.py]
+      tcd_text[text_encoder.py]
+    end
+
+    subgraph artifacts [On-disk artifacts]
+      runs[runs/&lt;id&gt;/]
+    end
+
+    subgraph viz [Visualization]
+      server[dashboard/server.py]
+      ui[dashboard/static/]
+    end
+
+    trainer --> config
+    trainer --> loader
+    trainer --> sched
+    trainer --> rewards
+    trainer --> eval
+
+    loader --> tcd_model
+    loader --> tcd_sched
+    loader --> tcd_text
+
+    sched -.wraps.-> tcd_sched
+
+    eval --> metrics
+    eval --> sched
+    eval --> loader
+
+    trainer ==writes==> runs
+    eval ==writes==> runs
+
+    server --reads--> runs
+    ui --HTTP--> server
+
+    classDef base fill:#eef,stroke:#88a
+    classDef artifact fill:#efe,stroke:#6a6
+    class tcd_model,tcd_sched,tcd_text base
+    class runs artifact
+```
+
+### What each piece does
+
+- **`trainer.py`** — the orchestrator. `train(cfg)` runs the GRPO outer loop: rollout → reward → advantage → update → log → (occasionally) eval + checkpoint.
+- **`sweep.py`** — launches multiple `train(cfg)` runs for the β pilot. Two modes: **sequential** (call `train()` in-process, single GPU/MPS) or **parallel** (one subprocess per run, each pinned to its own `CUDA_VISIBLE_DEVICES`). The 4×V100 cluster runs all 3 pilot configs in parallel; the laptop runs them sequentially.
+- **`config.py`** — `RunConfig` dataclass with all hyperparameters; `TRAINED_PROMPTS` constant; default base-checkpoint URI.
+- **`model_loader.py`** — pulls the pretrained checkpoint from Hugging Face (or local), instantiates `TextConditionedUNet` + `CLIPTextEncoder` + base `SimpleDDPMScheduler`, and provides `clone_frozen()` to make the reference copy.
+- **`scheduler_ext.py`** — wraps the base scheduler with two new things: `make_respaced_timesteps()` to subsample 1000 steps → 50, and `p_step_with_logprob()` which performs one denoising step *and* returns the Gaussian log-probability of the action taken. The full-DDPM mode of this passes a bit-exact parity test against the base scheduler.
+- **`rewards.py`** — a tiny `REWARDS` dict. Currently one entry: `vsym_l2(x0) = −‖x − hflip(x)‖²`.
+- **`eval.py`** — load a checkpoint, generate `N_prompts × M_seeds` samples at fixed seeds, run all metrics, save PNG grids and `metrics.json`.
+- **`metrics.py`** — pure functions for monitoring: `symmetry_l2`, `kl_to_ref`, `diversity`, `per_class_reward`.
+- **`runs/<id>/`** — the single source of truth between trainer and dashboard. Contains `config.json`, `log.jsonl`, `checkpoints/`, and `samples/step_N/`.
+- **`dashboard/`** — FastAPI server + Bootstrap UI that reads `runs/` and renders overlaid metric curves + sample grids. Completely decoupled from training.
+
+### Two important non-arrows
+
+- **`trainer.py` does NOT import `text_conditional_diffusion/*` directly** — it only goes through `model_loader.py`. This keeps the base codebase untouched.
+- **`dashboard/` does NOT import any RL code** — it only reads files in `runs/`. So the dashboard can render historical runs even if you delete the `rl/` folder.
+
