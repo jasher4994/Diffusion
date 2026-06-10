@@ -61,7 +61,9 @@ def run_sequential(cfgs: list[RunConfig]) -> list[tuple[str, float, int]]:
     1 on exception."""
     results: list[tuple[str, float, int]] = []
     for cfg in cfgs:
-        print(f"\n{'=' * 70}\n[sweep] starting {cfg.run_id} (beta={cfg.beta})\n{'=' * 70}")
+        print(
+            f"\n{'=' * 70}\n[sweep] starting {cfg.run_id} (beta={cfg.beta})\n{'=' * 70}"
+        )
         t0 = time.time()
         try:
             train(cfg)
@@ -73,7 +75,9 @@ def run_sequential(cfgs: list[RunConfig]) -> list[tuple[str, float, int]]:
     return results
 
 
-def run_parallel(cfgs: list[RunConfig], cuda_devices: list[int]) -> list[tuple[str, float, int]]:
+def run_parallel(
+    cfgs: list[RunConfig], cuda_devices: list[int]
+) -> list[tuple[str, float, int]]:
     """Spawn one subprocess per config, each pinned to its own GPU."""
     if len(cuda_devices) < len(cfgs):
         raise ValueError(
@@ -100,7 +104,9 @@ def run_parallel(cfgs: list[RunConfig], cuda_devices: list[int]) -> list[tuple[s
         code = p.wait()
         wall = time.time() - t0
         status = "OK" if code == 0 else f"FAIL (exit {code})"
-        print(f"[sweep] {cfg.run_id}: {status} in {wall / 60:.1f} min  (log {log_path})")
+        print(
+            f"[sweep] {cfg.run_id}: {status} in {wall / 60:.1f} min  (log {log_path})"
+        )
         results.append((cfg.run_id, wall, code))
     return results
 
@@ -108,20 +114,35 @@ def run_parallel(cfgs: list[RunConfig], cuda_devices: list[int]) -> list[tuple[s
 def _build_trainer_cmd(cfg: RunConfig) -> list[str]:
     """Build the python -m rl.trainer CLI for a config."""
     cmd = [
-        sys.executable, "-m", "rl.trainer",
-        "--run-id", cfg.run_id,
-        "--beta", str(cfg.beta),
-        "--group-size", str(cfg.group_size),
-        "--prompts-per-step", str(cfg.prompts_per_step),
-        "--n-steps", str(cfg.n_steps),
-        "--t-inf", str(cfg.t_inf),
-        "--lr", str(cfg.lr),
-        "--cfg-scale", str(cfg.cfg_scale),
-        "--eval-every", str(cfg.eval_every),
-        "--eval-n-seeds", str(cfg.eval_n_seeds),
-        "--device", cfg.device,
-        "--seed", str(cfg.seed),
-        "--reward", cfg.reward_name,
+        sys.executable,
+        "-m",
+        "rl.trainer",
+        "--run-id",
+        cfg.run_id,
+        "--beta",
+        str(cfg.beta),
+        "--group-size",
+        str(cfg.group_size),
+        "--prompts-per-step",
+        str(cfg.prompts_per_step),
+        "--n-steps",
+        str(cfg.n_steps),
+        "--t-inf",
+        str(cfg.t_inf),
+        "--lr",
+        str(cfg.lr),
+        "--cfg-scale",
+        str(cfg.cfg_scale),
+        "--eval-every",
+        str(cfg.eval_every),
+        "--eval-n-seeds",
+        str(cfg.eval_n_seeds),
+        "--device",
+        cfg.device,
+        "--seed",
+        str(cfg.seed),
+        "--reward",
+        cfg.reward_name,
     ]
     if cfg.eval_prompts and cfg.eval_prompts != list(rl_config.TRAINED_PROMPTS):
         cmd.append("--eval-prompts")
@@ -135,10 +156,17 @@ def _build_trainer_cmd(cfg: RunConfig) -> list[str]:
 
 
 def _cli() -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--prefix", default="pilot", help="Run-id prefix (default: pilot).")
-    p.add_argument("--betas", type=float, nargs="+", default=[0.0, 0.04, 0.4],
-                   help="KL coefficients to sweep (default: 0.0 0.04 0.4).")
+    p.add_argument(
+        "--betas",
+        type=float,
+        nargs="+",
+        default=[0.0, 0.04, 0.4],
+        help="KL coefficients to sweep (default: 0.0 0.04 0.4).",
+    )
     p.add_argument("--n-steps", type=int, default=200)
     p.add_argument("--t-inf", type=int, default=50)
     p.add_argument("--group-size", type=int, default=8)
@@ -150,10 +178,18 @@ def _cli() -> int:
     p.add_argument("--device", default="cuda")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--reward", default="vsym_l2")
-    p.add_argument("--parallel", action="store_true",
-                   help="Spawn one subprocess per run, pinning each to its own GPU.")
-    p.add_argument("--cuda-devices", type=int, nargs="+", default=None,
-                   help="GPU ids to use in --parallel mode (default: 0..N-1).")
+    p.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Spawn one subprocess per run, pinning each to its own GPU.",
+    )
+    p.add_argument(
+        "--cuda-devices",
+        type=int,
+        nargs="+",
+        default=None,
+        help="GPU ids to use in --parallel mode (default: 0..N-1).",
+    )
     args = p.parse_args()
 
     base = RunConfig(
@@ -178,7 +214,11 @@ def _cli() -> int:
 
     t0 = time.time()
     if args.parallel:
-        devs = args.cuda_devices if args.cuda_devices is not None else list(range(len(cfgs)))
+        devs = (
+            args.cuda_devices
+            if args.cuda_devices is not None
+            else list(range(len(cfgs)))
+        )
         results = run_parallel(cfgs, devs)
     else:
         results = run_sequential(cfgs)
