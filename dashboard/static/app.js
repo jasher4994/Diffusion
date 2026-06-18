@@ -12,6 +12,112 @@
   const CHARTS = {};
   let SELECTED = new Set();
 
+  // ----- Reward registry (mirrors rl/rewards.py) -------------------------
+  // KaTeX source for the per-sample reward each run optimizes. Keep in sync
+  // with the REWARDS dict in rl/rewards.py.
+  const REWARD_FORMULAS = {
+    vsym_l2: {
+      tex: "r(x) = -\\operatorname{mean}_{\\text{pixels}}\\big( (x - \\mathrm{hflip}(x))^2 \\big)",
+      note: "Vertical-symmetry L2. Optimum is ANY symmetric image — a blank blob maximizes it, so it can reward-hack via collapse.",
+    },
+    vsym_scale_inv: {
+      tex: "r(x) = -\\dfrac{\\lVert x - \\mathrm{hflip}(x) \\rVert^2}{\\lVert x - \\bar{x} \\rVert^2 + \\varepsilon}",
+      note: "Scale-invariant symmetry: blank images have ~zero content variance, so blanking no longer helps.",
+    },
+    vsym_plus_clip: {
+      tex: "r(x) = -\\operatorname{mean}\\big((x - \\mathrm{hflip}(x))^2\\big) + \\lambda\\,\\mathrm{CLIP}(x,\\text{prompt})",
+      note: "Composite: symmetry plus an on-prompt CLIP term to keep samples recognizable.",
+    },
+  };
+
+  // GRPO objective (mirrors rl/trainer.update_step). Shown with each run's β.
+  function grpoLossTex(beta) {
+    const b = typeof beta === "number" ? beta : 0;
+    return (
+      "\\mathcal{L} = -\\min\\!\\big(\\rho\\,A,\\ \\mathrm{clip}(\\rho, 1-\\epsilon, 1+\\epsilon)\\,A\\big)" +
+      " + " + formatBeta(b) + "\\cdot \\mathrm{KL}(\\pi_\\theta \\,\\Vert\\, \\pi_{\\text{ref}})"
+    );
+  }
+
+  function formatBeta(b) {
+    // Render β as its numeric value so the leash strength is explicit per run.
+    return "\\beta{=}" + b;
+  }
+
+  function renderTex(tex, el) {
+    if (window.katex) {
+      try {
+        window.katex.render(tex, el, { throwOnError: false, displayMode: true });
+        return;
+      } catch (e) {
+        /* fall through to text */
+      }
+    }
+    el.textContent = tex;
+  }
+
+  function repaintObjective() {
+    const $body = $("#objective-body").empty();
+    const ids = [...SELECTED];
+    if (ids.length === 0) {
+      $body.html('<em class="text-muted">Select a run to see its reward and loss function.</em>');
+      return;
+    }
+    // Shared definitions (advantage + ratio) shown once.
+    const $defs = $(`
+      <div class="run-objective">
+        <div class="formula-label">GRPO objective (per timestep, summed over the trajectory)</div>
+        <div class="formula-block" data-tex="${grpoLossTex(0).replace(/"/g, "&quot;")}" data-shared="1"></div>
+        <div class="text-muted small">
+          ratio <span data-itex="\\rho = \\pi_\\theta / \\pi_{\\theta_{\\text{old}}}"></span>,
+          group-relative advantage <span data-itex="A_i = (r_i - \\mu)/(\\sigma + \\varepsilon)"></span>,
+          clip <span data-itex="\\epsilon = 0.2"></span>. The shared form above uses each run's own β below.
+        </div>
+      </div>
+    `);
+    $body.append($defs);
+
+    ids.forEach((runId) => {
+      const run = RUN_CACHE.get(runId);
+      if (!run) return;
+      const cfg = run.config || {};
+      const rname = cfg.reward_name || "vsym_l2";
+      const reward = REWARD_FORMULAS[rname] || {
+        tex: "r(x) = \\text{" + rname + "}",
+        note: "",
+      };
+      const $r = $(`
+        <div class="run-objective">
+          <div>
+            <span class="run-color-swatch" style="background:${run.color}"></span>
+            <strong>${runId}</strong>
+            <span class="text-muted small">&nbsp;reward=<code>${rname}</code> · β=${cfg.beta} · K=${cfg.group_size} · T_inf=${cfg.t_inf}</span>
+          </div>
+          <div class="formula-label mt-2">Reward</div>
+          <div class="formula-block" data-tex="${reward.tex.replace(/"/g, "&quot;")}"></div>
+          ${reward.note ? `<div class="text-muted small">${reward.note}</div>` : ""}
+          <div class="formula-label mt-2">Loss (this run's β)</div>
+          <div class="formula-block" data-tex="${grpoLossTex(cfg.beta).replace(/"/g, "&quot;")}"></div>
+        </div>
+      `);
+      $body.append($r);
+    });
+
+    // Render all collected TeX.
+    $body.find(".formula-block").each(function () {
+      renderTex($(this).attr("data-tex"), this);
+    });
+    $body.find("[data-itex]").each(function () {
+      if (window.katex) {
+        try {
+          window.katex.render($(this).attr("data-itex"), this, { throwOnError: false });
+        } catch (e) {
+          this.textContent = $(this).attr("data-itex");
+        }
+      }
+    });
+  }
+
   // ----- Chart helpers ---------------------------------------------------
 
   function makeChart(canvasId, yLabel) {
@@ -230,6 +336,7 @@
       loaders.push(ensureRunLoaded(runId, color));
     });
     return Promise.all(loaders).then(() => {
+      repaintObjective();
       repaintCharts();
       repaintSamples();
     });

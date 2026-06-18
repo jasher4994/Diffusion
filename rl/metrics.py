@@ -38,6 +38,20 @@ def symmetry_l2(x: torch.Tensor) -> torch.Tensor:
     return -diff.pow(2).mean(dim=(-3, -2, -1)).sqrt()
 
 
+def symmetry_mse(x: torch.Tensor) -> torch.Tensor:
+    """Negated per-pixel *mean-squared* symmetry error (no sqrt).
+
+    This is the exact quantity `rewards.vsym_l2` optimizes. `symmetry_l2`
+    (above) takes a sqrt, so it lives on a different scale and is not directly
+    comparable to the training reward; use this when you want the eval number
+    to match what the trainer maximizes.
+
+    Returns `[B]`; 0 == perfectly symmetric, more negative == less so.
+    """
+    diff = x - _hflip(x)
+    return -diff.pow(2).mean(dim=(-3, -2, -1))
+
+
 def symmetry_l1(x: torch.Tensor) -> torch.Tensor:
     """Negated per-pixel L1 distance to horizontal flip. Robust variant of L2."""
     diff = x - _hflip(x)
@@ -181,6 +195,7 @@ def all_image_metrics(x: torch.Tensor, prompts: Iterable[str] | None = None) -> 
     Returns a plain dict of Python floats so it serialises straight to JSON.
     """
     s_l2 = symmetry_l2(x)
+    s_mse = symmetry_mse(x)
     s_l1 = symmetry_l1(x)
     s_ss = symmetry_ssim(x)
     div = diversity(x)
@@ -188,6 +203,7 @@ def all_image_metrics(x: torch.Tensor, prompts: Iterable[str] | None = None) -> 
 
     out = {
         "symmetry_l2_mean": float(s_l2.mean().item()),
+        "symmetry_mse_mean": float(s_mse.mean().item()),
         "symmetry_l1_mean": float(s_l1.mean().item()),
         "symmetry_ssim_mean": float(s_ss.mean().item()),
         "diversity": float(div.item()),

@@ -1,5 +1,11 @@
 # Plan: Exploring RL for Shaping Diffusion Model Outputs
 
+> **Status (2026-06-18):** Phase A–F complete. The β baseline pilot ran and
+> confirmed all hypotheses — see [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) (Experiment 1)
+> and [PILOT_RESULTS.md](PILOT_RESULTS.md). Key finding: `vsym_l2`'s optimum is a
+> blank symmetric blob, so no β yields a usable model. Active direction is now
+> **reward redesign** (Experiment 2), not further β tuning.
+
 ## Purpose — read this first
 
 This is an **exploratory, learning-driven project**, not a feature-delivery task. The goal is to build genuine understanding of how reinforcement learning (specifically GRPO) reshapes a pretrained diffusion model, and to share that understanding with others. We choose **vertical symmetry as the reward task** because it is concrete, accessible, visually obvious, and rich enough to expose interesting RL dynamics (notably, reward hacking via mode collapse). Symmetry is the *vehicle*; understanding is the *destination*.
@@ -177,7 +183,9 @@ If any of these fails, the next action is debugging, not expanding the sweep.
 - DDIM (deferred; respaced DDPM is the rollout sampler).
 - DDPO / value-network methods (potential follow-up only).
 - Distributed training (single-machine, single-process; trainer must run on the same hardware as the original 4-hr training without modification).
-- Reward functions other than `vsym_l2`.
+- ~~Reward functions other than `vsym_l2`.~~ **Now in scope** as of Experiment 2 —
+  the pilot showed `vsym_l2` alone collapses, so reward redesign is the next step
+  (see [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)).
 - Multi-axis sweeps before the pilot is digested.
 
 ---

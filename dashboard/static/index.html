@@ -52,14 +52,41 @@
       max-height: 12rem;
       overflow: auto;
     }
+
+    .formula-block {
+      background: #f8f9fa;
+      border: 1px solid #e3e3e3;
+      border-radius: 4px;
+      padding: .5rem .75rem;
+      margin: .25rem 0 .5rem;
+      overflow-x: auto;
+    }
+
+    .formula-label {
+      font-size: .8rem;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: .15rem;
+    }
+
+    .run-objective + .run-objective {
+      border-top: 1px solid #eee;
+      margin-top: .75rem;
+      padding-top: .5rem;
+    }
   </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 </head>
 
 <body>
   <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h3 class="m-0">Diffusion RL Dashboard</h3>
-      <button id="refresh-btn" class="btn btn-sm btn-outline-secondary">↻ Refresh</button>
+      <div class="d-flex gap-2">
+        <a href="/static/model_comparison.html" target="_blank"
+           class="btn btn-sm btn-outline-primary">DDPM vs GRPO ↗</a>
+        <button id="refresh-btn" class="btn btn-sm btn-outline-secondary">↻ Refresh</button>
+      </div>
     </div>
 
     <div class="row">
@@ -75,6 +102,14 @@
 
       <!-- Main: charts + samples -->
       <div class="col-md-9">
+        <!-- Objective: reward + loss formulas for the selected run(s) -->
+        <div class="card mb-3" id="objective-card">
+          <div class="card-header">Objective &mdash; reward &amp; loss</div>
+          <div class="card-body" id="objective-body">
+            <em class="text-muted">Select a run to see its reward and loss function.</em>
+          </div>
+        </div>
+
         <!-- Charts -->
         <div class="row g-2 mb-3" id="charts-row">
           <div class="col-md-6">
@@ -107,6 +142,7 @@
 
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 
